@@ -43,36 +43,101 @@
 
 const int Z_AGGRO=10;
 
-const int MobAISpellRange=100; // max range of buffs
-const int SpellType_Nuke=1;
-const int SpellType_Heal=2;
-const int SpellType_Root=4;
-const int SpellType_Buff=8;
-const int SpellType_Escape=16;
-const int SpellType_Pet=32;
-const int SpellType_Lifetap=64;
-const int SpellType_Snare=128;
-const int SpellType_DOT=256;
-const int SpellType_Dispel=512;
-const int SpellType_InCombatBuff=1024;
-const int SpellType_Mez=2048;
-const int SpellType_Charm=4096;
-const int SpellType_Slow = 8192;
-const int SpellType_Debuff = 16384;
-const int SpellType_Cure = 32768;
-const int SpellType_Resurrect = 65536;
+const uint32 MobAISpellRange=100; // max range of buffs
 
-const int SpellTypes_Detrimental = SpellType_Nuke|SpellType_Root|SpellType_Lifetap|SpellType_Snare|SpellType_DOT|SpellType_Dispel|SpellType_Mez|SpellType_Charm|SpellType_Debuff|SpellType_Slow;
-const int SpellTypes_Beneficial = SpellType_Heal|SpellType_Buff|SpellType_Escape|SpellType_Pet|SpellType_InCombatBuff|SpellType_Cure;
+enum SpellTypes : uint32
+{
+	SpellType_Nuke = (1 << 0),
+	SpellType_Heal = (1 << 1),
+	SpellType_Root = (1 << 2),
+	SpellType_Buff = (1 << 3),
+	SpellType_Escape = (1 << 4),
+	SpellType_Pet = (1 << 5),
+	SpellType_Lifetap = (1 << 6),
+	SpellType_Snare = (1 << 7),
+	SpellType_DOT = (1 << 8),
+	SpellType_Dispel = (1 << 9),
+	SpellType_InCombatBuff = (1 << 10),
+	SpellType_Mez = (1 << 11),
+	SpellType_Charm = (1 << 12),
+	SpellType_Slow = (1 << 13),
+	SpellType_Debuff = (1 << 14),
+	SpellType_Cure = (1 << 15),
+	SpellType_Resurrect = (1 << 16),
+	SpellType_HateRedux = (1 << 17),
+	SpellType_InCombatBuffSong = (1 << 18), // bard in-combat group/ae buffs
+	SpellType_OutOfCombatBuffSong = (1 << 19), // bard out-of-combat group/ae buffs
+	SpellType_PreCombatBuff = (1 << 20),
+	SpellType_PreCombatBuffSong = (1 << 21),
 
-#define SpellType_Any		0xFFFF
+	SpellTypes_Detrimental = (SpellType_Nuke | SpellType_Root | SpellType_Lifetap | SpellType_Snare | SpellType_DOT | SpellType_Dispel | SpellType_Mez | SpellType_Charm | SpellType_Debuff | SpellType_Slow),
+	SpellTypes_Beneficial = (SpellType_Heal | SpellType_Buff | SpellType_Escape | SpellType_Pet | SpellType_InCombatBuff | SpellType_Cure | SpellType_HateRedux | SpellType_InCombatBuffSong | SpellType_OutOfCombatBuffSong | SpellType_PreCombatBuff | SpellType_PreCombatBuffSong),
 
-enum SpellAffectIndex {
-	SAI_Calm			= 12, // Lull and Alliance Spells
-	SAI_Dispell_Sight	= 14, // Dispells and Spells like Bind Sight
-	SAI_Memory_Blur		= 27,
-	SAI_Calm_Song		= 43 // Lull and Alliance Songs
+	SpellTypes_Innate = (SpellType_Nuke | SpellType_Lifetap | SpellType_DOT | SpellType_Dispel | SpellType_Mez | SpellType_Slow | SpellType_Debuff | SpellType_Charm | SpellType_Root),
+
+	SpellType_Any = 0xFFFFFFFF
 };
+
+
+// These should not be used to determine spell category..
+// They are a graphical affects (effects?) index only
+// TODO: import sai list
+enum SpellAffectIndex {
+	SAI_Summon_Mount_Unclass	= -1,
+	SAI_Direct_Damage			= 0,
+	SAI_Heal_Cure				= 1,
+	SAI_AC_Buff					= 2,
+	SAI_AE_Damage				= 3,
+	SAI_Summon					= 4,	// Summoned Pets and Items
+	SAI_Sight					= 5,
+	SAI_Mana_Regen_Resist_Song	= 6,
+	SAI_Stat_Buff				= 7,
+	SAI_Vanish					= 9,	// Invisibility and Gate/Port
+	SAI_Appearance				= 10,	// Illusion and Size
+	SAI_Enchanter_Pet			= 11,
+	SAI_Calm					= 12,	// Lull and Alliance Spells
+	SAI_Fear					= 13,
+	SAI_Dispell_Sight			= 14,	// Dispells and Spells like Bind Sight
+	SAI_Stun					= 15,
+	SAI_Haste_Runspeed			= 16,	// Haste and SoW
+	SAI_Combat_Slow				= 17,
+	SAI_Damage_Shield			= 18,
+	SAI_Cannibalize_Weapon_Proc	= 19,
+	SAI_Weaken					= 20,
+	SAI_Banish					= 21,
+	SAI_Blind_Poison			= 22,
+	SAI_Cold_DD					= 23,
+	SAI_Poison_Disease_DD		= 24,
+	SAI_Fire_DD					= 25,
+	SAI_Memory_Blur				= 27,
+	SAI_Gravity_Fling			= 28,
+	SAI_Suffocate				= 29,
+	SAI_Lifetap_Over_Time		= 30,
+	SAI_Fire_AE					= 31,
+	SAI_Cold_AE					= 33,
+	SAI_Poison_Disease_AE		= 34,
+	SAI_Teleport				= 40,
+	SAI_Direct_Damage_Song		= 41,
+	SAI_Combat_Buff_Song		= 42,
+	SAI_Calm_Song				= 43,	// Lull and Alliance Songs
+	SAI_Firework				= 45,
+	SAI_Firework_AE				= 46,
+	SAI_Weather_Rocket			= 47,
+	SAI_Convert_Vitals			= 50,
+	SAI_NPC_Special_60			= 60,
+	SAI_NPC_Special_61			= 61,
+	SAI_NPC_Special_62			= 62,
+	SAI_NPC_Special_63			= 63,
+	SAI_NPC_Special_70			= 70,
+	SAI_NPC_Special_71			= 71,
+	SAI_NPC_Special_80			= 80,
+	SAI_Trap_Lock				= 88
+};
+
+enum class GlobalGroup {
+	Lich = 46,
+};
+
 enum RESISTTYPE
 {
 	RESIST_NONE = 0,
@@ -410,7 +475,7 @@ typedef enum {
 #define SE_Blank						254 // implemented
 #define SE_ShieldDuration				255	// not implemented as bonus - increases duration of /shield
 #define SE_ShroudofStealth				256	// implemented
-#define SE_PetDiscipline				257 // not implemented as bonus - /pet hold
+#define SE_PetDiscipline				257 // not implemented as bonus - /pet hold - official name is GivePetHold
 #define SE_TripleBackstab				258 // implemented[AA] - chance to perform a triple backstab
 #define SE_CombatStability				259 // implemented[AA] - damage mitigation
 #define SE_AddSingingMod				260 // implemented[AA] - Instrument/Singing Mastery, base1 is the mod, base2 is the ItemType
@@ -420,7 +485,7 @@ typedef enum {
 #define SE_HastenedAASkill			    264 // implemented
 #define SE_MasteryofPast				265 // implemented[AA] - Spells less than effect values level can not be fizzled
 #define SE_ExtraAttackChance			266 // implemented - increase chance to score an extra attack with a 2-Handed Weapon.
-#define SE_PetDiscipline2				267 // *not implemented - /pet focus, /pet no cast
+#define SE_AddPetCommand				267 // implemented - sets command base2 to base1
 #define SE_ReduceTradeskillFail			268 // implemented - reduces chance to fail with given tradeskill by a percent chance
 #define SE_MaxBindWound					269	// implemented[AA] - Increase max HP you can bind wound.
 #define SE_BardSongRange				270	// implemented[AA] - increase range of beneficial bard songs (Sionachie's Crescendo)
@@ -485,7 +550,7 @@ typedef enum {
 #define SE_ManaAbsorbPercentDamage		329 // implemented
 #define SE_CriticalDamageMob			330	// implemented
 #define SE_Salvage						331 // implemented - chance to recover items that would be destroyed in failed tradeskill combine
-//#define SE_SummonToCorpse				332 // *not implemented AA - Call of the Wild (Druid/Shaman Res spell with no exp)
+#define SE_SummonToCorpse				332 // *not implemented AA - Call of the Wild (Druid/Shaman Res spell with no exp)
 #define SE_CastOnRuneFadeEffect			333 // implemented
 #define SE_BardAEDot					334	// implemented
 #define SE_BlockNextSpellFocus			335	// implemented - base1 chance to block next spell ie Puratus (8494)
@@ -502,11 +567,11 @@ typedef enum {
 #define SE_HeadShotLevel				346	// implemented[AA] - HeadShot max level to kill
 #define SE_DoubleRangedAttack			347	// implemented - chance at an additional archery attack (consumes arrow)
 #define SE_LimitManaMin					348	// implemented
-#define SE_ShieldEquipHateMod			349	// implemented[AA] Increase melee hate when wearing a shield.
+#define SE_ShieldEquipDmgMod			349	// implemented[AA] Increase melee base damage (indirectly increasing hate) when wearing a shield.
 #define SE_ManaBurn						350	// implemented - Drains mana for damage/heal at a defined ratio up to a defined maximum amount of mana.
-//#define SE_PersistentEffect			351	// *not implemented. creates a trap/totem that casts a spell (spell id + base1?) when anything comes near it. can probably make a beacon for this
-//#define SE_IncreaseTrapCount			352	// *not implemented - looks to be some type of invulnerability? Test ITC (8755)
-//#define SE_AdditionalAura				353	// *not implemented - allows use of more than 1 aura, aa effect
+#define SE_PersistentEffect				351	// *not implemented. creates a trap/totem that casts a spell (spell id + base1?) when anything comes near it. can probably make a beacon for this
+#define SE_IncreaseTrapCount			352	// *not implemented - looks to be some type of invulnerability? Test ITC (8755)
+#define SE_AdditionalAura				353	// *not implemented - allows use of more than 1 aura, aa effect
 //#define SE_DeactivateAllTraps			354	// *not implemented - looks to be some type of invulnerability? Test DAT (8757)
 //#define SE_LearnTrap					355	// *not implemented - looks to be some type of invulnerability? Test LT (8758)
 //#define SE_ChangeTriggerType			356	// not used
@@ -519,7 +584,7 @@ typedef enum {
 #define SE_BandolierSlots				363	// *not implemented[AA] 'Battle Ready' expands the bandolier by one additional save slot per rank.
 #define SE_TripleAttackChance			364	// implemented
 #define SE_ProcOnSpellKillShot			365	// implemented - chance to trigger a spell on kill when the kill is caused by a specific spell with this effect in it (10470 Venin)
-#define SE_ShieldEquipDmgMod			366	// implemented[AA] Damage modifier to melee if shield equiped. (base1 = dmg mod , base2 = ?) ie Shield Specialist AA
+#define SE_GroupShielding				366	// *not implemented[AA] This gives you /shieldgroup
 #define SE_SetBodyType					367	// implemented - set body type of base1 so it can be affected by spells that are limited to that type (Plant, Animal, Undead, etc)
 //#define SE_FactionMod					368	// *not implemented - increases faction with base1 (faction id, live won't match up w/ ours) by base2
 #define SE_CorruptionCounter			369	// implemented
@@ -699,7 +764,7 @@ struct SPDat_Spell_Struct
 										// -- DIETY_BERTOXXULOUS ... DIETY_VEESHAN
 /* 142 */	//int8 npc_no_cast;			// 142: between 0 & 100 -- NPC_NO_CAST
 /* 143 */	//int ai_pt_bonus;			// 143: always set to 0, client doesn't save this -- AI_PT_BONUS
-/* 144 */	//int16 new_icon	// Spell icon used by the client in uifiles/default/spells??.tga, both for spell gems & buff window. Looks to depreciate icon & memicon -- NEW_ICON
+/* 144 */	int16 new_icon;	// Spell icon used by the client in uifiles/default/spells??.tga, both for spell gems & buff window. Looks to depreciate icon & memicon -- NEW_ICON
 /* 145 */	//int16 spellanim; // Doesn't look like it's the same as #doanim, so not sure what this is, particles I think -- SPELL_EFFECT_INDEX
 /* 146 */	bool uninterruptable;	// Looks like anything != 0 is uninterruptable. Values are mostly -1, 0, & 1 (Fetid Breath = 90?) -- NO_INTERRUPT
 /* 147 */	int16 ResistDiff; // -- RESIST_MOD
@@ -735,7 +800,7 @@ struct SPDat_Spell_Struct
 /* 180 */	int spell_category; // -- GLOBAL_GROUP
 /* 181 */	//int pvp_duration; // buffdurationformula for PvP -- PVP_DURATION
 /* 182 */	//int pvp_duration_cap; // buffduration for PvP -- PVP_DURATION_CAP
-/* 183 */	//int pcnpc_only_flag; // valid values are 0, 1 = PCs (and mercs), and 2 = NPCs (and not mercs) -- PCNPC_ONLY_FLAG
+/* 183 */	int pcnpc_only_flag; // valid values are 0, 1 = PCs (and mercs), and 2 = NPCs (and not mercs) -- PCNPC_ONLY_FLAG
 /* 184 */	bool cast_not_standing; // this is checked in the client's EQ_Spell::IsCastWhileInvisSpell, this also blocks SE_InterruptCasting from affecting this spell -- CAST_NOT_STANDING
 /* 185 */	bool can_mgb; // 0=no, -1 or 1 = yes -- CAN_MGB
 /* 186 */	int dispel_flag; // -- NO_DISPELL
@@ -907,7 +972,6 @@ bool IsCastWhileInvis(uint16 spell_id);
 bool IsEffectIgnoredInStacking(int spa);
 
 int CalcPetHp(int levelb, int classb, int STA = 75);
-const char *GetRandPetName();
 int GetSpellEffectDescNum(uint16 spell_id);
 DmgShieldType GetDamageShieldType(uint16 spell_id, int32 DSType = 0);
 bool DetrimentalSpellAllowsRest(uint16 spell_id);

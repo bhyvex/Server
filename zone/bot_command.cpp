@@ -63,7 +63,6 @@
 #include "guild_mgr.h"
 #include "map.h"
 #include "doors.h"
-#include "pathing.h"
 #include "qglobals.h"
 #include "queryserv.h"
 #include "quest_parser_collection.h"
@@ -436,6 +435,8 @@ public:
 				case 10:
 					if (spells[spell_id].effectdescnum != 65)
 						break;
+					if (IsEffectInSpell(spell_id, SE_NegateIfCombat))
+						break;
 					entry_prototype = new STMovementSpeedEntry();
 					entry_prototype->SafeCastToMovementSpeed()->group = BCSpells::IsGroupType(target_type);
 					break;
@@ -452,7 +453,7 @@ public:
 			
 			if (target_type == BCEnum::TT_Self && (entry_prototype->BCST() != BCEnum::SpT_Stance && entry_prototype->BCST() != BCEnum::SpT_SummonCorpse)) {
 #ifdef BCSTSPELLDUMP
-				Log.Out(Logs::General, Logs::Error, "DELETING entry_prototype (primary clause) - name: %s, target_type: %s, BCST: %s",
+				Log(Logs::General, Logs::Error, "DELETING entry_prototype (primary clause) - name: %s, target_type: %s, BCST: %s",
 					spells[spell_id].name, BCEnum::TargetTypeEnumToString(target_type).c_str(), BCEnum::SpellTypeEnumToString(entry_prototype->BCST()).c_str());
 #endif
 				safe_delete(entry_prototype);
@@ -460,7 +461,7 @@ public:
 			}
 			if (entry_prototype->BCST() == BCEnum::SpT_Stance && target_type != BCEnum::TT_Self) {
 #ifdef BCSTSPELLDUMP
-				Log.Out(Logs::General, Logs::Error, "DELETING entry_prototype (secondary clause) - name: %s, BCST: %s, target_type: %s",
+				Log(Logs::General, Logs::Error, "DELETING entry_prototype (secondary clause) - name: %s, BCST: %s, target_type: %s",
 					spells[spell_id].name, BCEnum::SpellTypeEnumToString(entry_prototype->BCST()).c_str(), BCEnum::TargetTypeEnumToString(target_type).c_str());
 #endif
 				safe_delete(entry_prototype);
@@ -1059,7 +1060,7 @@ private:
 		std::string query = "SELECT `short_name`, `long_name` FROM `zone` WHERE '' NOT IN (`short_name`, `long_name`)";
 		auto results = database.QueryDatabase(query);
 		if (!results.Success()) {
-			Log.Out(Logs::General, Logs::Error, "load_teleport_zone_names() - Error in zone names query: %s", results.ErrorMessage().c_str());
+			Log(Logs::General, Logs::Error, "load_teleport_zone_names() - Error in zone names query: %s", results.ErrorMessage().c_str());
 			return;
 		}
 
@@ -1086,14 +1087,14 @@ private:
 	}
 
 	static void status_report() {
-		Log.Out(Logs::General, Logs::Commands, "load_bot_command_spells(): - 'RuleI(Bots, CommandSpellRank)' set to %i.", RuleI(Bots, CommandSpellRank));
+		Log(Logs::General, Logs::Commands, "load_bot_command_spells(): - 'RuleI(Bots, CommandSpellRank)' set to %i.", RuleI(Bots, CommandSpellRank));
 		if (bot_command_spells.empty()) {
-			Log.Out(Logs::General, Logs::Error, "load_bot_command_spells() - 'bot_command_spells' is empty.");
+			Log(Logs::General, Logs::Error, "load_bot_command_spells() - 'bot_command_spells' is empty.");
 			return;
 		}
 
 		for (int i = BCEnum::SpellTypeFirst; i <= BCEnum::SpellTypeLast; ++i)
-			Log.Out(Logs::General, Logs::Commands, "load_bot_command_spells(): - '%s' returned %u spell entries.",
+			Log(Logs::General, Logs::Commands, "load_bot_command_spells(): - '%s' returned %u spell entries.",
 				BCEnum::SpellTypeEnumToString(static_cast<BCEnum::SpType>(i)).c_str(), bot_command_spells[static_cast<BCEnum::SpType>(i)].size());
 	}
 
@@ -1348,6 +1349,7 @@ int bot_command_init(void)
 		bot_command_add("botreport", "Orders a bot to report its readiness", 0, bot_subcommand_bot_report) ||
 		bot_command_add("botspawn", "Spawns a created bot", 0, bot_subcommand_bot_spawn) ||
 		bot_command_add("botstance", "Changes the stance of a bot", 0, bot_subcommand_bot_stance) ||
+		bot_command_add("botstopmeleelevel", "Sets the level a caster or spell-casting fighter bot will stop melee combat", 0, bot_subcommand_bot_stop_melee_level) ||
 		bot_command_add("botsummon", "Summons bot(s) to your location", 0, bot_subcommand_bot_summon) ||
 		bot_command_add("bottattoo", "Changes the Drakkin tattoo of a bot", 0, bot_subcommand_bot_tattoo) ||
 		bot_command_add("bottogglearcher", "Toggles a archer bot between melee and ranged weapon use", 0, bot_subcommand_bot_toggle_archer) ||
@@ -1426,12 +1428,12 @@ int bot_command_init(void)
 		auto bot_command_settings_iter = bot_command_settings.find(working_bcl_iter.first);
 		if (bot_command_settings_iter == bot_command_settings.end()) {
 			if (working_bcl_iter.second->access == 0)
-				Log.Out(Logs::General, Logs::Commands, "bot_command_init(): Warning: Bot Command '%s' defaulting to access level 0!", working_bcl_iter.first.c_str());
+				Log(Logs::General, Logs::Commands, "bot_command_init(): Warning: Bot Command '%s' defaulting to access level 0!", working_bcl_iter.first.c_str());
 			continue;
 		}
 
 		working_bcl_iter.second->access = bot_command_settings_iter->second.first;
-		Log.Out(Logs::General, Logs::Commands, "bot_command_init(): - Bot Command '%s' set to access level %d.", working_bcl_iter.first.c_str(), bot_command_settings_iter->second.first);
+		Log(Logs::General, Logs::Commands, "bot_command_init(): - Bot Command '%s' set to access level %d.", working_bcl_iter.first.c_str(), bot_command_settings_iter->second.first);
 		if (bot_command_settings_iter->second.second.empty())
 			continue;
 
@@ -1439,14 +1441,14 @@ int bot_command_init(void)
 			if (alias_iter.empty())
 				continue;
 			if (bot_command_list.find(alias_iter) != bot_command_list.end()) {
-				Log.Out(Logs::General, Logs::Commands, "bot_command_init(): Warning: Alias '%s' already exists as a bot command - skipping!", alias_iter.c_str());
+				Log(Logs::General, Logs::Commands, "bot_command_init(): Warning: Alias '%s' already exists as a bot command - skipping!", alias_iter.c_str());
 				continue;
 			}
 
 			bot_command_list[alias_iter] = working_bcl_iter.second;
 			bot_command_aliases[alias_iter] = working_bcl_iter.first;
 
-			Log.Out(Logs::General, Logs::Commands, "bot_command_init(): - Alias '%s' added to bot command '%s'.", alias_iter.c_str(), bot_command_aliases[alias_iter].c_str());
+			Log(Logs::General, Logs::Commands, "bot_command_init(): - Alias '%s' added to bot command '%s'.", alias_iter.c_str(), bot_command_aliases[alias_iter].c_str());
 		}
 	}
 
@@ -1492,21 +1494,21 @@ void bot_command_deinit(void)
 int bot_command_add(std::string bot_command_name, const char *desc, int access, BotCmdFuncPtr function)
 {
 	if (bot_command_name.empty()) {
-		Log.Out(Logs::General, Logs::Error, "bot_command_add() - Bot command added with empty name string - check bot_command.cpp.");
+		Log(Logs::General, Logs::Error, "bot_command_add() - Bot command added with empty name string - check bot_command.cpp.");
 		return -1;
 	}
 	if (function == nullptr) {
-		Log.Out(Logs::General, Logs::Error, "bot_command_add() - Bot command '%s' added without a valid function pointer - check bot_command.cpp.", bot_command_name.c_str());
+		Log(Logs::General, Logs::Error, "bot_command_add() - Bot command '%s' added without a valid function pointer - check bot_command.cpp.", bot_command_name.c_str());
 		return -1;
 	}
 	if (bot_command_list.count(bot_command_name) != 0) {
-		Log.Out(Logs::General, Logs::Error, "bot_command_add() - Bot command '%s' is a duplicate bot command name - check bot_command.cpp.", bot_command_name.c_str());
+		Log(Logs::General, Logs::Error, "bot_command_add() - Bot command '%s' is a duplicate bot command name - check bot_command.cpp.", bot_command_name.c_str());
 		return -1;
 	}
 	for (auto iter : bot_command_list) {
 		if (iter.second->function != function)
 			continue;
-		Log.Out(Logs::General, Logs::Error, "bot_command_add() - Bot command '%s' equates to an alias of '%s' - check bot_command.cpp.", bot_command_name.c_str(), iter.first.c_str());
+		Log(Logs::General, Logs::Error, "bot_command_add() - Bot command '%s' equates to an alias of '%s' - check bot_command.cpp.", bot_command_name.c_str(), iter.first.c_str());
 		return -1;
 	}
 
@@ -1561,11 +1563,11 @@ int bot_command_real_dispatch(Client *c, const char *message)
 	}
 
 	if(cur->access >= COMMANDS_LOGGING_MIN_STATUS) {
-		Log.Out(Logs::General, Logs::Commands, "%s (%s) used bot command: %s (target=%s)",  c->GetName(), c->AccountName(), message, c->GetTarget()?c->GetTarget()->GetName():"NONE");
+		Log(Logs::General, Logs::Commands, "%s (%s) used bot command: %s (target=%s)",  c->GetName(), c->AccountName(), message, c->GetTarget()?c->GetTarget()->GetName():"NONE");
 	}
 
 	if(cur->function == nullptr) {
-		Log.Out(Logs::General, Logs::Error, "Bot command '%s' has a null function\n",  cstr.c_str());
+		Log(Logs::General, Logs::Error, "Bot command '%s' has a null function\n",  cstr.c_str());
 		return(-1);
 	} else {
 		//dispatch C++ bot command
@@ -2401,8 +2403,8 @@ namespace ActionableBots
 				continue;
 
 			mod_skill_value = base_skill_value;
-			for (int16 index = EQEmu::legacy::EQUIPMENT_BEGIN; index <= EQEmu::legacy::EQUIPMENT_END; ++index) {
-				const ItemInst* indexed_item = bot_iter->GetBotItem(index);
+			for (int16 index = EQEmu::invslot::EQUIPMENT_BEGIN; index <= EQEmu::invslot::EQUIPMENT_END; ++index) {
+				const EQEmu::ItemInstance* indexed_item = bot_iter->GetBotItem(index);
 				if (indexed_item && indexed_item->GetItem()->SkillModType == skill_type)
 					mod_skill_value += (base_skill_value * (((float)indexed_item->GetItem()->SkillModValue) / 100.0f));
 			}
@@ -2603,6 +2605,7 @@ void bot_command_bot(Client *c, const Seperator *sep)
 	subcommand_list.push_back("botreport");
 	subcommand_list.push_back("botspawn");
 	subcommand_list.push_back("botstance");
+	subcommand_list.push_back("botstopmeleelevel");
 	subcommand_list.push_back("botsummon");
 	subcommand_list.push_back("bottogglearcher");
 	subcommand_list.push_back("bottogglehelm");
@@ -3045,13 +3048,7 @@ void bot_command_guard(Client *c, const Seperator *sep)
 
 	sbl.remove(nullptr);
 	for (auto bot_iter : sbl) {
-		bot_iter->WipeHateList();
-		bot_iter->SetFollowID(0);
-		if (!bot_iter->GetPet())
-			continue;
-
-		bot_iter->GetPet()->WipeHateList();
-		bot_iter->GetPet()->SetFollowID(0);
+		bot_iter->SetGuardMode();
 	}
 	if (sbl.size() == 1)
 		Bot::BotGroupSay(sbl.front(), "Guarding this position");
@@ -3397,15 +3394,18 @@ void bot_command_movement_speed(Client *c, const Seperator *sep)
 	if (helper_spell_list_fail(c, local_list, BCEnum::SpT_MovementSpeed) || helper_command_alias_fail(c, "bot_command_movement_speed", sep->arg[0], "movementspeed"))
 		return;
 	if (helper_is_help_or_usage(sep->arg[1])) {
-		c->Message(m_usage, "usage: (<friendly_target>) %s ([group])", sep->arg[0]);
+		c->Message(m_usage, "usage: (<friendly_target>) %s ([group | sow])", sep->arg[0]);
 		helper_send_usage_required_bots(c, BCEnum::SpT_MovementSpeed);
 		return;
 	}
 
 	bool group = false;
-	std::string group_arg = sep->arg[1];
-	if (!group_arg.compare("group"))
+	bool sow = false;
+	std::string arg1 = sep->arg[1];
+	if (!arg1.compare("group"))
 		group = true;
+	else if (!arg1.compare("sow"))
+		sow = true;
 
 	ActionableTarget::Types actionable_targets;
 	Bot* my_bot = nullptr;
@@ -3417,7 +3417,9 @@ void bot_command_movement_speed(Client *c, const Seperator *sep)
 		auto local_entry = list_iter->SafeCastToMovementSpeed();
 		if (helper_spell_check_fail(local_entry))
 			continue;
-		if (local_entry->group != group)
+		if (!sow && (local_entry->group != group))
+			continue;
+		if (sow && (local_entry->spell_id != 278)) // '278' = single-target "Spirit of Wolf"
 			continue;
 
 		auto target_mob = actionable_targets.Select(c, local_entry->target_type, FRIENDLY);
@@ -3493,7 +3495,7 @@ void bot_command_pick_lock(Client *c, const Seperator *sep)
 		float curelev = (diff.z * diff.z);
 #if (EQDEBUG >= 11)
 		if (curdist <= 130 && curelev <= 65 && curelev >= 25) // 2D limit is '130' (x^2 + y^2), 1D theoretically should be '65' (z^2)
-			Log.Out(Logs::Detail, Logs::Doors, "bot_command_pick_lock(): DoorID: %i - Elevation difference failure within theoretical limit (%f <= 65.0)", door_iter->GetDoorID(), curelev);
+			Log(Logs::Detail, Logs::Doors, "bot_command_pick_lock(): DoorID: %i - Elevation difference failure within theoretical limit (%f <= 65.0)", door_iter->GetDoorID(), curelev);
 #endif
 		if (curelev >= 25 || curdist > 130) // changed curelev from '10' to '25' - requiring diff.z to be less than '5'
 			continue;
@@ -4181,7 +4183,7 @@ void bot_subcommand_bot_clone(Client *c, const Seperator *sep)
 	}
 	if (!my_bot->GetBotID()) {
 		c->Message(m_unknown, "An unknown error has occured - BotName: %s, BotID: %u", my_bot->GetCleanName(), my_bot->GetBotID());
-		Log.Out(Logs::General, Logs::Commands, "bot_command_clone(): - Error: Active bot reported invalid ID (BotName: %s, BotID: %u, OwnerName: %s, OwnerID: %u, AcctName: %s, AcctID: %u)",
+		Log(Logs::General, Logs::Commands, "bot_command_clone(): - Error: Active bot reported invalid ID (BotName: %s, BotID: %u, OwnerName: %s, OwnerID: %u, AcctName: %s, AcctID: %u)",
 			my_bot->GetCleanName(), my_bot->GetBotID(), c->GetCleanName(), c->CharacterID(), c->AccountName(), c->AccountID());
 		return;
 	}
@@ -4241,12 +4243,69 @@ void bot_subcommand_bot_clone(Client *c, const Seperator *sep)
 
 void bot_subcommand_bot_create(Client *c, const Seperator *sep)
 {
-	const std::string msg_class = StringFormat("class: %u(WAR), %u(CLR), %u(PAL), %u(RNG), %u(SHD), %u(DRU), %u(MNK), %u(BRD), %u(ROG), %u(SHM), %u(NEC), %u(WIZ), %u(MAG), %u(ENC), %u(BST), %u(BER)",
-		WARRIOR, CLERIC, PALADIN, RANGER, SHADOWKNIGHT, DRUID, MONK, BARD, ROGUE, SHAMAN, NECROMANCER, WIZARD, MAGICIAN, ENCHANTER, BEASTLORD, BERSERKER);
-	const std::string msg_race = StringFormat("race: %u(HUM), %u(BAR), %u(ERU), %u(ELF), %u(HIE), %u(DEF), %u(HEF), %u(DWF), %u(TRL), %u(OGR), %u(HFL), %u(GNM), %u(IKS), %u(VAH), %u(FRG), %u(DRK)",
-		HUMAN, BARBARIAN, ERUDITE, WOOD_ELF, HIGH_ELF, DARK_ELF, HALF_ELF, DWARF, TROLL, OGRE, HALFLING, GNOME, IKSAR, VAHSHIR, FROGLOK, DRAKKIN);
-	const std::string msg_gender = StringFormat("gender: %u(M), %u(F)", MALE, FEMALE);
-	
+	const std::string class_substrs[17] = { "",
+		"%u(WAR)", "%u(CLR)", "%u(PAL)", "%u(RNG)",
+		"%u(SHD)", "%u(DRU)", "%u(MNK)", "%u(BRD)",
+		"%u(ROG)", "%u(SHM)", "%u(NEC)", "%u(WIZ)",
+		"%u(MAG)", "%u(ENC)", "%u(BST)", "%u(BER)"
+	};
+
+	const std::string race_substrs[17] = { "",
+		"%u(HUM)", "%u(BAR)", "%u(ERU)", "%u(ELF)",
+		"%u(HIE)", "%u(DEF)", "%u(HEF)", "%u(DWF)",
+		"%u(TRL)", "%u(OGR)", "%u(HFL)", "%u(GNM)",
+		"%u(IKS)", "%u(VAH)", "%u(FRG)", "%u(DRK)"
+	};
+
+	const uint16 race_values[17] = { 0,
+		HUMAN, BARBARIAN, ERUDITE, WOOD_ELF,
+		HIGH_ELF, DARK_ELF, HALF_ELF, DWARF,
+		TROLL, OGRE, HALFLING, GNOME,
+		IKSAR, VAHSHIR, FROGLOK, DRAKKIN
+	};
+
+	const std::string gender_substrs[2] = {
+		"%u(M)", "%u(F)",
+	};
+
+	std::string msg_class = "class:";
+	std::string msg_race = "race:";
+	std::string msg_gender = "gender:";
+	std::string msg_separator;
+
+	msg_separator = " ";
+	for (int i = 0; i <= 15; ++i) {
+		if (((1 << i) & RuleI(Bots, AllowedClasses)) == 0)
+			continue;
+
+		msg_class.append(const_cast<const std::string&>(msg_separator));
+		msg_class.append(StringFormat(class_substrs[i + 1].c_str(), (i + 1)));
+
+		msg_separator = ", ";
+	}
+
+	msg_separator = " ";
+	for (int i = 0; i <= 15; ++i) {
+		if (((1 << i) & RuleI(Bots, AllowedRaces)) == 0)
+			continue;
+
+		msg_race.append(const_cast<const std::string&>(msg_separator));
+		msg_race.append(StringFormat(race_substrs[i + 1].c_str(), race_values[i + 1]));
+
+		msg_separator = ", ";
+	}
+
+	msg_separator = " ";
+	for (int i = 0; i <= 1; ++i) {
+		if (((1 << i) & RuleI(Bots, AllowedGenders)) == 0)
+			continue;
+
+		msg_gender.append(const_cast<const std::string&>(msg_separator));
+		msg_gender.append(StringFormat(gender_substrs[i].c_str(), i));
+
+		msg_separator = ", ";
+	}
+
 	if (helper_command_alias_fail(c, "bot_subcommand_bot_create", sep->arg[0], "botcreate"))
 		return;
 	if (helper_is_help_or_usage(sep->arg[1])) {
@@ -4358,7 +4417,7 @@ void bot_subcommand_bot_dye_armor(Client *c, const Seperator *sep)
 	// TODO: Trouble-shoot model update issue
 	
 	const std::string msg_matslot = StringFormat("mat_slot: %c(All), %i(Head), %i(Chest), %i(Arms), %i(Wrists), %i(Hands), %i(Legs), %i(Feet)",
-		'*', EQEmu::textures::TextureHead, EQEmu::textures::TextureChest, EQEmu::textures::TextureArms, EQEmu::textures::TextureWrist, EQEmu::textures::TextureHands, EQEmu::textures::TextureLegs, EQEmu::textures::TextureFeet);
+		'*', EQEmu::textures::armorHead, EQEmu::textures::armorChest, EQEmu::textures::armorArms, EQEmu::textures::armorWrist, EQEmu::textures::armorHands, EQEmu::textures::armorLegs, EQEmu::textures::armorFeet);
 	
 	if (helper_command_alias_fail(c, "bot_subcommand_bot_dye_armor", sep->arg[0], "botdyearmor"))
 		return;
@@ -4369,15 +4428,15 @@ void bot_subcommand_bot_dye_armor(Client *c, const Seperator *sep)
 	}
 	const int ab_mask = ActionableBots::ABM_NoFilter;
 
-	uint8 material_slot = EQEmu::textures::TextureInvalid;
+	uint8 material_slot = EQEmu::textures::materialInvalid;
 	int16 slot_id = INVALID_INDEX;
 
 	bool dye_all = (sep->arg[1][0] == '*');
 	if (!dye_all) {
 		material_slot = atoi(sep->arg[1]);
-		slot_id = Inventory::CalcSlotFromMaterial(material_slot);
+		slot_id = EQEmu::InventoryProfile::CalcSlotFromMaterial(material_slot);
 
-		if (!sep->IsNumber(1) || slot_id == INVALID_INDEX || material_slot > EQEmu::textures::TextureFeet) {
+		if (!sep->IsNumber(1) || slot_id == INVALID_INDEX || material_slot > EQEmu::textures::LastTintableTexture) {
 			c->Message(m_fail, "Valid [mat_slot]s for this command are:");
 			c->Message(m_fail, msg_matslot.c_str());
 			return;
@@ -4543,7 +4602,7 @@ void bot_subcommand_bot_follow_distance(Client *c, const Seperator *sep)
 	}
 	const int ab_mask = ActionableBots::ABM_NoFilter;
 
-	uint32 bfd = BOT_DEFAULT_FOLLOW_DISTANCE;
+	uint32 bfd = BOT_FOLLOW_DISTANCE_DEFAULT;
 	bool set_flag = false;
 	int ab_arg = 2;
 
@@ -4554,6 +4613,10 @@ void bot_subcommand_bot_follow_distance(Client *c, const Seperator *sep)
 		}
 
 		bfd = atoi(sep->arg[2]);
+		if (bfd < 1)
+			bfd = 1;
+		if (bfd > BOT_FOLLOW_DISTANCE_DEFAULT_MAX)
+			bfd = BOT_FOLLOW_DISTANCE_DEFAULT_MAX;
 		set_flag = true;
 		ab_arg = 3;
 	}
@@ -4787,7 +4850,7 @@ void bot_subcommand_bot_list(Client *c, const Seperator *sep)
 		return;
 	if (helper_is_help_or_usage(sep->arg[1])) {
 		c->Message(m_usage, "usage: %s ([class] [value]) ([race] [value]) ([name] [partial-full])", sep->arg[0]);
-		c->Message(m_note, "Note: filter criteria is orderless and optional");
+		c->Message(m_note, "note: filter criteria is orderless and optional");
 		return;
 	}
 
@@ -5044,7 +5107,11 @@ void bot_subcommand_bot_spawn(Client *c, const Seperator *sep)
 		return;
 	}
 
-	my_bot->Spawn(c);
+	if (!my_bot->Spawn(c)) {
+		c->Message(m_fail, "Failed to spawn bot '%s' (id: %i)", bot_name.c_str(), bot_id);
+		safe_delete(my_bot);
+		return;
+	}
 
 	static const char* bot_spawn_message[16] = {
 		"A solid weapon is my ally!", // WARRIOR / 'generic'
@@ -5110,12 +5177,58 @@ void bot_subcommand_bot_stance(Client *c, const Seperator *sep)
 
 		if (!current_flag) {
 			bot_iter->SetBotStance(bst);
-			bot_iter->CalcChanceToCast();
 			bot_iter->Save();
 		}
 
 		Bot::BotGroupSay(bot_iter, "My current stance is '%s' (%u)", GetBotStanceName(bot_iter->GetBotStance()), bot_iter->GetBotStance());
 	}
+}
+
+void bot_subcommand_bot_stop_melee_level(Client *c, const Seperator *sep)
+{
+	if (helper_command_alias_fail(c, "bot_subcommand_bot_stop_melee_level", sep->arg[0], "botstopmeleelevel"))
+		return;
+	if (helper_is_help_or_usage(sep->arg[1])) {
+		c->Message(m_usage, "usage: <target_bot> %s [current | reset | sync | value: 0-255]", sep->arg[0]);
+		c->Message(m_note, "note: Only caster and spell-casting fighter class bots may be modified");
+		c->Message(m_note, "note: Use [reset] to set stop melee level to server rule");
+		c->Message(m_note, "note: Use [sync] to set stop melee level to current bot level");
+		return;
+	}
+
+	auto my_bot = ActionableBots::AsTarget_ByBot(c);
+	if (!my_bot) {
+		c->Message(m_fail, "You must <target> a bot that you own to use this command");
+		return;
+	}
+	if (!IsCasterClass(my_bot->GetClass()) && !IsSpellFighterClass(my_bot->GetClass())) {
+		c->Message(m_fail, "You must <target> a caster or spell-casting fighter class bot to use this command");
+		return;
+	}
+
+	uint8 sml = RuleI(Bots, CasterStopMeleeLevel);
+
+	if (sep->IsNumber(1)) {
+		sml = atoi(sep->arg[1]);
+	}
+	else if (!strcasecmp(sep->arg[1], "sync")) {
+		sml = my_bot->GetLevel();
+	}
+	else if (!strcasecmp(sep->arg[1], "current")) {
+		c->Message(m_message, "My current melee stop level is %u", my_bot->GetStopMeleeLevel());
+		return;
+	}
+	else if (strcasecmp(sep->arg[1], "reset")) {
+		c->Message(m_fail, "A [current] or [reset] argument, or numeric [value] is required to use this command");
+		return;
+	}
+	// [reset] falls through with initialization value
+
+	my_bot->SetStopMeleeLevel(sml);
+	if (!botdb.SaveStopMeleeLevel(c->CharacterID(), my_bot->GetBotID(), sml))
+		c->Message(m_fail, "%s for '%s'", BotDatabase::fail::SaveStopMeleeLevel(), my_bot->GetCleanName());
+
+	c->Message(m_action, "Successfully set stop melee level for %s to %u", my_bot->GetCleanName(), sml);
 }
 
 void bot_subcommand_bot_summon(Client *c, const Seperator *sep)
@@ -5136,17 +5249,18 @@ void bot_subcommand_bot_summon(Client *c, const Seperator *sep)
 		if (!bot_iter)
 			continue;
 
-		Bot::BotGroupSay(bot_iter, "Whee!");
+		//Bot::BotGroupSay(bot_iter, "Whee!");
 
 		bot_iter->WipeHateList();
-		bot_iter->SetTarget(bot_iter->GetBotOwner());
+		bot_iter->SetTarget(nullptr);
 		bot_iter->Warp(glm::vec3(c->GetPosition()));
+		bot_iter->DoAnim(0);
 
 		if (!bot_iter->HasPet())
 			continue;
 
 		bot_iter->GetPet()->WipeHateList();
-		bot_iter->GetPet()->SetTarget(bot_iter);
+		bot_iter->GetPet()->SetTarget(nullptr);
 		bot_iter->GetPet()->Warp(glm::vec3(c->GetPosition()));
 	}
 
@@ -5389,6 +5503,7 @@ void bot_subcommand_bot_update(Client *c, const Seperator *sep)
 
 		bot_iter->SetPetChooser(false);
 		bot_iter->CalcBotStats((sbl.size() == 1));
+		bot_iter->SendAppearancePacket(AT_WhoLevel, bot_iter->GetLevel(), true, true);
 		++bot_count;
 	}
 
@@ -5799,18 +5914,22 @@ void bot_subcommand_botgroup_load(Client *c, const Seperator *sep)
 		return;
 	}
 	if (!leader_id) {
-		c->Message(m_fail, "Can not locate bot-group leader id for '%s'", botgroup_name_arg.c_str());
+		c->Message(m_fail, "Cannot locate bot-group leader id for '%s'", botgroup_name_arg.c_str());
 		return;
 	}
 
 	auto botgroup_leader = Bot::LoadBot(leader_id);
 	if (!botgroup_leader) {
-		c->Message(m_fail, "Could not spawn bot-group leader for '%s'", botgroup_name_arg.c_str());
+		c->Message(m_fail, "Could not load bot-group leader for '%s'", botgroup_name_arg.c_str());
 		safe_delete(botgroup_leader);
 		return;
 	}
 
-	botgroup_leader->Spawn(c);
+	if (!botgroup_leader->Spawn(c)) {
+		c->Message(m_fail, "Could not spawn bot-group leader %s for '%s'", botgroup_leader->GetName(), botgroup_name_arg.c_str());
+		safe_delete(botgroup_leader);
+		return;
+	}
 	
 	Group* group_inst = new Group(botgroup_leader);
 
@@ -5829,7 +5948,12 @@ void bot_subcommand_botgroup_load(Client *c, const Seperator *sep)
 			return;
 		}
 
-		botgroup_member->Spawn(c);
+		if (!botgroup_member->Spawn(c)) {
+			c->Message(m_fail, "Could not spawn bot '%s' (id: %i)", botgroup_member->GetName(), member_iter);
+			safe_delete(botgroup_member);
+			return;
+		}
+
 		Bot::AddBotToGroup(botgroup_member, group_inst);
 	}
 
@@ -7062,33 +7186,31 @@ void bot_subcommand_inventory_list(Client *c, const Seperator *sep)
 		return;
 	}
 
-	const ItemInst* inst = nullptr;
-	const EQEmu::ItemBase* item = nullptr;
+	const EQEmu::ItemInstance* inst = nullptr;
+	const EQEmu::ItemData* item = nullptr;
 	bool is2Hweapon = false;
 
-	std::string item_link;
 	EQEmu::SayLinkEngine linker;
 	linker.SetLinkType(EQEmu::saylink::SayLinkItemInst);
 
 	uint32 inventory_count = 0;
-	for (int i = EQEmu::legacy::EQUIPMENT_BEGIN; i <= (EQEmu::legacy::EQUIPMENT_END + 1); ++i) {
-		if ((i == EQEmu::legacy::SlotSecondary) && is2Hweapon)
+	for (int i = EQEmu::invslot::EQUIPMENT_BEGIN; i <= (EQEmu::invslot::EQUIPMENT_END + 1); ++i) {
+		if ((i == EQEmu::invslot::slotSecondary) && is2Hweapon)
 			continue;
 
-		inst = my_bot->CastToBot()->GetBotItem(i == 22 ? EQEmu::legacy::SlotPowerSource : i);
+		inst = my_bot->CastToBot()->GetBotItem(i == 22 ? EQEmu::invslot::SLOT_POWER_SOURCE : i);
 		if (!inst || !inst->GetItem()) {
-			c->Message(m_message, "I need something for my %s (slot %i)", GetBotEquipSlotName(i), (i == 22 ? EQEmu::legacy::SlotPowerSource : i));
+			c->Message(m_message, "I need something for my %s (slot %i)", GetBotEquipSlotName(i), (i == 22 ? EQEmu::invslot::SLOT_POWER_SOURCE : i));
 			continue;
 		}
 		
 		item = inst->GetItem();
-		if ((i == EQEmu::legacy::SlotPrimary) && item->IsType2HWeapon()) {
+		if ((i == EQEmu::invslot::slotPrimary) && item->IsType2HWeapon()) {
 			is2Hweapon = true;
 		}
 
 		linker.SetItemInst(inst);
-		item_link = linker.GenerateLink();
-		c->Message(m_message, "Using %s in my %s (slot %i)", item_link.c_str(), GetBotEquipSlotName(i), (i == 22 ? EQEmu::legacy::SlotPowerSource : i));
+		c->Message(m_message, "Using %s in my %s (slot %i)", linker.GenerateLink().c_str(), GetBotEquipSlotName(i), (i == 22 ? EQEmu::invslot::SLOT_POWER_SOURCE : i));
 
 		++inventory_count;
 	}
@@ -7127,13 +7249,13 @@ void bot_subcommand_inventory_remove(Client *c, const Seperator *sep)
 	}
 
 	int slotId = atoi(sep->arg[1]);
-	if (!sep->IsNumber(1) || ((slotId > EQEmu::legacy::EQUIPMENT_END || slotId < EQEmu::legacy::EQUIPMENT_BEGIN) && slotId != EQEmu::legacy::SlotPowerSource)) {
+	if (!sep->IsNumber(1) || ((slotId > EQEmu::invslot::EQUIPMENT_END || slotId < EQEmu::invslot::EQUIPMENT_BEGIN) && slotId != EQEmu::invslot::SLOT_POWER_SOURCE)) {
 		c->Message(m_fail, "Valid slots are 0-21 or 9999");
 		return;
 	}
 
-	const EQEmu::ItemBase* itm = nullptr;
-	const ItemInst* itminst = my_bot->GetBotItem(slotId);
+	const EQEmu::ItemData* itm = nullptr;
+	const EQEmu::ItemInstance* itminst = my_bot->GetBotItem(slotId);
 	if (itminst)
 		itm = itminst->GetItem();
 
@@ -7142,11 +7264,11 @@ void bot_subcommand_inventory_remove(Client *c, const Seperator *sep)
 		return;
 	}
 
-	for (int m = AUG_INDEX_BEGIN; m < EQEmu::legacy::ITEM_COMMON_SIZE; ++m) {
+	for (int m = EQEmu::invaug::SOCKET_BEGIN; m <= EQEmu::invaug::SOCKET_END; ++m) {
 		if (!itminst)
 			break;
 
-		ItemInst *itma = itminst->GetAugment(m);
+		EQEmu::ItemInstance *itma = itminst->GetAugment(m);
 		if (!itma)
 			continue;
 		if (!c->CheckLoreConflict(itma->GetItem()))
@@ -7159,7 +7281,7 @@ void bot_subcommand_inventory_remove(Client *c, const Seperator *sep)
 	std::string error_message;
 	if (itm) {
 		c->PushItemOnCursor(*itminst, true);
-		if ((slotId == EQEmu::legacy::SlotRange) || (slotId == EQEmu::legacy::SlotAmmo) || (slotId == EQEmu::legacy::SlotPrimary) || (slotId == EQEmu::legacy::SlotSecondary))
+		if ((slotId == EQEmu::invslot::slotRange) || (slotId == EQEmu::invslot::slotAmmo) || (slotId == EQEmu::invslot::slotPrimary) || (slotId == EQEmu::invslot::slotSecondary))
 			my_bot->SetBotArcher(false);
 
 		my_bot->RemoveBotItemBySlot(slotId, &error_message);
@@ -7173,31 +7295,31 @@ void bot_subcommand_inventory_remove(Client *c, const Seperator *sep)
 	}
 
 	switch (slotId) {
-	case EQEmu::legacy::SlotCharm:
-	case EQEmu::legacy::SlotEar1:
-	case EQEmu::legacy::SlotHead:
-	case EQEmu::legacy::SlotFace:
-	case EQEmu::legacy::SlotEar2:
-	case EQEmu::legacy::SlotNeck:
-	case EQEmu::legacy::SlotBack:
-	case EQEmu::legacy::SlotWrist1:
-	case EQEmu::legacy::SlotWrist2:
-	case EQEmu::legacy::SlotRange:
-	case EQEmu::legacy::SlotPrimary:
-	case EQEmu::legacy::SlotSecondary:
-	case EQEmu::legacy::SlotFinger1:
-	case EQEmu::legacy::SlotFinger2:
-	case EQEmu::legacy::SlotChest:
-	case EQEmu::legacy::SlotWaist:
-	case EQEmu::legacy::SlotPowerSource:
-	case EQEmu::legacy::SlotAmmo:
+	case EQEmu::invslot::slotCharm:
+	case EQEmu::invslot::slotEar1:
+	case EQEmu::invslot::slotHead:
+	case EQEmu::invslot::slotFace:
+	case EQEmu::invslot::slotEar2:
+	case EQEmu::invslot::slotNeck:
+	case EQEmu::invslot::slotBack:
+	case EQEmu::invslot::slotWrist1:
+	case EQEmu::invslot::slotWrist2:
+	case EQEmu::invslot::slotRange:
+	case EQEmu::invslot::slotPrimary:
+	case EQEmu::invslot::slotSecondary:
+	case EQEmu::invslot::slotFinger1:
+	case EQEmu::invslot::slotFinger2:
+	case EQEmu::invslot::slotChest:
+	case EQEmu::invslot::slotWaist:
+	case EQEmu::invslot::SLOT_POWER_SOURCE:
+	case EQEmu::invslot::slotAmmo:
 		c->Message(m_message, "My %s is %s unequipped", GetBotEquipSlotName(slotId), ((itm) ? ("now") : ("already")));
 		break;
-	case EQEmu::legacy::SlotShoulders:
-	case EQEmu::legacy::SlotArms:
-	case EQEmu::legacy::SlotHands:
-	case EQEmu::legacy::SlotLegs:
-	case EQEmu::legacy::SlotFeet:
+	case EQEmu::invslot::slotShoulders:
+	case EQEmu::invslot::slotArms:
+	case EQEmu::invslot::slotHands:
+	case EQEmu::invslot::slotLegs:
+	case EQEmu::invslot::slotFeet:
 		c->Message(m_message, "My %s are %s unequipped", GetBotEquipSlotName(slotId), ((itm) ? ("now") : ("already")));
 		break;
 	default:
@@ -7231,17 +7353,17 @@ void bot_subcommand_inventory_window(Client *c, const Seperator *sep)
 
 	std::string window_text;
 	//std::string item_link;
-	//Client::TextLink linker;
-	//linker.SetLinkType(linker.linkItemInst);
+	//EQEmu::SayLinkEngine linker;
+	//linker.SetLinkType(EQEmu::saylink::SayLinkItemInst);
 
-	for (int i = EQEmu::legacy::EQUIPMENT_BEGIN; i <= (EQEmu::legacy::EQUIPMENT_END + 1); ++i) {
-		const EQEmu::ItemBase* item = nullptr;
-		const ItemInst* inst = my_bot->CastToBot()->GetBotItem(i == 22 ? EQEmu::legacy::SlotPowerSource : i);
+	for (int i = EQEmu::invslot::EQUIPMENT_BEGIN; i <= (EQEmu::invslot::EQUIPMENT_END + 1); ++i) {
+		const EQEmu::ItemData* item = nullptr;
+		const EQEmu::ItemInstance* inst = my_bot->CastToBot()->GetBotItem(i == 22 ? EQEmu::invslot::SLOT_POWER_SOURCE : i);
 		if (inst)
 			item = inst->GetItem();
 
 		window_text.append("<c \"#FFFFFF\">");
-		window_text.append(GetBotEquipSlotName(i == 22 ? EQEmu::legacy::SlotPowerSource : i));
+		window_text.append(GetBotEquipSlotName(i == 22 ? EQEmu::invslot::SLOT_POWER_SOURCE : i));
 		window_text.append(": ");
 		if (item) {
 			//window_text.append("</c>");
@@ -7523,14 +7645,33 @@ uint32 helper_bot_create(Client *bot_owner, std::string bot_name, uint8 bot_clas
 		return bot_id;
 	}
 
+	auto class_bit = GetPlayerClassBit(bot_class);
+	if ((class_bit & RuleI(Bots, AllowedClasses)) == PLAYER_CLASS_UNKNOWN_BIT) {
+		bot_owner->Message(m_fail, "Class '%s' bots are not allowed on this server", GetPlayerClassName(bot_class));
+		return bot_id;
+	}
+
+	auto race_bit = GetPlayerRaceBit(bot_race);
+	if ((race_bit & RuleI(Bots, AllowedRaces)) == PLAYER_RACE_UNKNOWN_BIT) {
+		bot_owner->Message(m_fail, "Race '%s' bots are not allowed on this server", GetPlayerRaceName(bot_class));
+		return bot_id;
+	}
+
 	if (!Bot::IsValidRaceClassCombo(bot_race, bot_class)) {
 		bot_owner->Message(m_fail, "'%s'(%u):'%s'(%u) is an invalid race-class combination",
 			Bot::RaceIdToString(bot_race).c_str(), bot_race, Bot::ClassIdToString(bot_class).c_str(), bot_class);
 		return bot_id;
 	}
 
-	if (bot_gender > FEMALE) {
-		bot_owner->Message(m_fail, "gender: %u(M), %u(F)", MALE, FEMALE);
+	if (bot_gender > FEMALE || (((1 << bot_gender) & RuleI(Bots, AllowedGenders)) == 0)) {
+		if (RuleI(Bots, AllowedGenders) == 3)
+			bot_owner->Message(m_fail, "gender: %u(M), %u(F)", MALE, FEMALE);
+		else if (RuleI(Bots, AllowedGenders) == 2)
+			bot_owner->Message(m_fail, "gender: %u(F)", FEMALE);
+		else if (RuleI(Bots, AllowedGenders) == 1)
+			bot_owner->Message(m_fail, "gender: %u(M)", MALE);
+		else
+			bot_owner->Message(m_fail, "gender: ERROR - No valid genders exist");
 		return bot_id;
 	}
 

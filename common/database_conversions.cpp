@@ -41,6 +41,9 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #pragma pack(1)
 
+// all const/macro reference values should really be converted to a magic number for this
+// process to ensure that the struct sizes and offsets match up to the corresponding blob
+
 /* Conversion Structs */
 
 namespace Convert {
@@ -186,7 +189,7 @@ namespace Convert {
 		/*002*/	uint32 HP;
 		/*006*/	uint32 Mana;
 		/*010*/	Convert::SpellBuff_Struct Buffs[BUFF_COUNT];
-		/*510*/	uint32 Items[EQEmu::textures::TextureCount];
+		/*510*/	uint32 Items[EQEmu::textures::materialCount];
 		/*546*/	char Name[64];
 		/*610*/
 	};
@@ -227,9 +230,9 @@ namespace Convert {
 		/*0304*/	uint8							ability_time_minutes;
 		/*0305*/	uint8							ability_time_hours;	//place holder
 		/*0306*/	uint8							unknown0306[6];		// @bp Spacer/Flag?
-		/*0312*/	uint32							item_material[EQEmu::textures::TextureCount];	// Item texture/material of worn/held items
+		/*0312*/	uint32							item_material[EQEmu::textures::materialCount];	// Item texture/material of worn/held items
 		/*0348*/	uint8							unknown0348[44];
-		/*0392*/	Convert::Color_Struct			item_tint[EQEmu::textures::TextureCount];
+		/*0392*/	Convert::Color_Struct			item_tint[EQEmu::textures::materialCount];
 		/*0428*/	Convert::AA_Array				aa_array[MAX_PP_AA_ARRAY];
 		/*2348*/	float							unknown2384;		//seen ~128, ~47
 		/*2352*/	char							servername[32];		// length probably not right
@@ -330,7 +333,7 @@ namespace Convert {
 		/*7212*/	uint32							tribute_points;
 		/*7216*/	uint32							unknown7252;
 		/*7220*/	uint32							tribute_active;		//1=active
-		/*7224*/	Convert::Tribute_Struct			tributes[EQEmu::legacy::TRIBUTE_SIZE];
+		/*7224*/	Convert::Tribute_Struct			tributes[5];
 		/*7264*/	Convert::Disciplines_Struct		disciplines;
 		/*7664*/	uint32							recastTimers[MAX_RECAST_TYPES];	// Timers (GMT of last use)
 		/*7744*/	char							unknown7780[160];
@@ -471,16 +474,6 @@ static inline void loadbar(unsigned int x, unsigned int n, unsigned int w = 50) 
 bool Database::CheckDatabaseConversions() {
 	CheckDatabaseConvertPPDeblob();
 	CheckDatabaseConvertCorpseDeblob();
-
-	/* Fetch EQEmu Server script */
-	if (!std::ifstream("eqemu_server.pl")){
-		std::cout << "Pulling down automatic database upgrade script..." << std::endl;
-#ifdef _WIN32
-		system("perl -MLWP::UserAgent -e \"require LWP::UserAgent;  my $ua = LWP::UserAgent->new; $ua->timeout(10); $ua->env_proxy; my $response = $ua->get('https://raw.githubusercontent.com/EQEmu/Server/master/utils/scripts/eqemu_server.pl'); if ($response->is_success){ open(FILE, '> eqemu_server.pl'); print FILE $response->decoded_content; close(FILE); }\"");
-#else
-		system("wget --no-check-certificate -O eqemu_server.pl https://raw.githubusercontent.com/EQEmu/Server/master/utils/scripts/eqemu_server.pl");
-#endif
-	}
 
 	/* Run EQEmu Server script (Checks for database updates) */
 	system("perl eqemu_server.pl ran_from_world");
@@ -1403,7 +1396,7 @@ bool Database::CheckDatabaseConvertPPDeblob(){
 				if (rquery != ""){ results = QueryDatabase(rquery); }
 				/* Run Material Color Convert */
 				first_entry = 0; rquery = "";
-				for (i = 0; i < EQEmu::textures::TextureCount; i++){
+				for (i = EQEmu::textures::textureBegin; i < EQEmu::textures::materialCount; i++){
 					if (pp->item_tint[i].color > 0){
 						if (first_entry != 1){
 							rquery = StringFormat("REPLACE INTO `character_material` (id, slot, blue, green, red, use_tint, color) VALUES (%u, %u, %u, %u, %u, %u, %u)", character_id, i, pp->item_tint[i].rgb.blue, pp->item_tint[i].rgb.green, pp->item_tint[i].rgb.red, pp->item_tint[i].rgb.use_tint, pp->item_tint[i].color);
@@ -1415,7 +1408,7 @@ bool Database::CheckDatabaseConvertPPDeblob(){
 				if (rquery != ""){ results = QueryDatabase(rquery); }
 				/* Run Tribute Convert */
 				first_entry = 0; rquery = "";
-				for (i = 0; i < EQEmu::legacy::TRIBUTE_SIZE; i++){
+				for (i = 0; i < 5; i++){
 					if (pp->tributes[i].tribute > 0 && pp->tributes[i].tribute != 4294967295){
 						if (first_entry != 1){
 							rquery = StringFormat("REPLACE INTO `character_tribute` (id, tier, tribute) VALUES (%u, %u, %u)", character_id, pp->tributes[i].tier, pp->tributes[i].tribute);

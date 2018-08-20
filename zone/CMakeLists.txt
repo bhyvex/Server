@@ -4,6 +4,8 @@ SET(zone_sources
 	aa.cpp
 	aa_ability.cpp
 	aggro.cpp
+	aggromanager.cpp
+	aura.cpp
 	attack.cpp
 	beacon.cpp
 	bonuses.cpp
@@ -17,6 +19,7 @@ SET(zone_sources
 	client_process.cpp
 	command.cpp
 	corpse.cpp
+	data_bucket.cpp
 	doors.cpp
 	effects.cpp
 	embparser.cpp
@@ -26,6 +29,7 @@ SET(zone_sources
 	encounter.cpp
 	entity.cpp
 	exp.cpp
+	fastmath.cpp
 	fearpath.cpp
 	forage.cpp
 	groups.cpp
@@ -50,6 +54,7 @@ SET(zone_sources
 	lua_item.cpp
 	lua_iteminst.cpp
 	lua_mob.cpp
+	lua_mod.cpp
 	lua_npc.cpp
 	lua_object.cpp
 	lua_packet.cpp
@@ -58,12 +63,14 @@ SET(zone_sources
 	lua_raid.cpp
 	lua_spawn.cpp
 	lua_spell.cpp
+	lua_stat_bonuses.cpp
 	embperl.cpp
 	embxs.cpp
 	entity.cpp
 	exp.cpp
 	fearpath.cpp
 	forage.cpp
+	global_loot_manager.cpp
 	groups.cpp
 	guild.cpp
 	guild_mgr.cpp
@@ -81,6 +88,10 @@ SET(zone_sources
 	npc_ai.cpp
 	object.cpp
 	oriented_bounding_box.cpp
+	pathfinder_interface.cpp
+	pathfinder_nav_mesh.cpp
+	pathfinder_null.cpp
+	pathfinder_waypoint.cpp
 	pathing.cpp
 	perl_client.cpp
 	perl_doors.cpp
@@ -122,6 +133,7 @@ SET(zone_sources
 	water_map_v2.cpp
 	waypoints.cpp
 	worldserver.cpp
+	xtargetautohaters.cpp
 	zone.cpp
 	zone_config.cpp
 	zonedb.cpp
@@ -131,6 +143,8 @@ SET(zone_sources
 SET(zone_headers
 	aa.h
 	aa_ability.h
+	aggromanager.h
+	aura.h
 	basic_functions.h
 	beacon.h
 	bot.h
@@ -142,6 +156,7 @@ SET(zone_headers
 	command.h
 	common.h
 	corpse.h
+   data_bucket.h
 	doors.h
 	embparser.h
 	embperl.h
@@ -150,7 +165,9 @@ SET(zone_headers
 	entity.h
 	errmsg.h
 	event_codes.h
+	fastmath.h
 	forage.h
+	global_loot_manager.h
 	groups.h
 	guild_mgr.h
 	hate_list.h
@@ -159,6 +176,7 @@ SET(zone_headers
 	lua_bit.h
 	lua_client.h
 	lua_corpse.h
+	lua_door.h
 	lua_encounter.h
 	lua_entity.h
 	lua_entity_list.h
@@ -169,6 +187,7 @@ SET(zone_headers
 	lua_item.h
 	lua_iteminst.h
 	lua_mob.h
+	lua_mod.h
 	lua_npc.h
 	lua_object.h
 	lua_packet.h
@@ -178,6 +197,7 @@ SET(zone_headers
 	lua_raid.h
 	lua_spawn.h
 	lua_spell.h
+	lua_stat_bonuses.h
 	map.h
 	masterentity.h
 	maxskill.h
@@ -189,7 +209,10 @@ SET(zone_headers
 	npc_ai.h
 	object.h
 	oriented_bounding_box.h
-	pathing.h
+	pathfinder_interface.h
+	pathfinder_nav_mesh.h
+	pathfinder_null.h
+	pathfinder_waypoint.h
 	perlpacket.h
 	petitions.h
 	pets.h
@@ -215,6 +238,7 @@ SET(zone_headers
 	water_map_v1.h
 	water_map_v2.h
 	worldserver.h
+	xtargetautohaters.h
 	zone.h
 	zone_config.h
 	zonedb.h
@@ -227,39 +251,18 @@ ENDIF(EQEMU_DEPOP_INVALIDATES_CACHE)
 
 ADD_EXECUTABLE(zone ${zone_sources} ${zone_headers})
 
-INSTALL(TARGETS zone RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
+INSTALL(TARGETS zone RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin)
 
 ADD_DEFINITIONS(-DZONE)
 
-TARGET_LINK_LIBRARIES(zone common debug ${MySQL_LIBRARY_DEBUG} optimized ${MySQL_LIBRARY_RELEASE} ${ZLIB_LIBRARY})
+TARGET_LINK_LIBRARIES(zone ${SERVER_LIBS})
 
 IF(EQEMU_BUILD_PERL)
 	TARGET_LINK_LIBRARIES(zone ${PERL_LIBRARY})
-ENDIF(EQEMU_BUILD_PERL)
+ENDIF()
 
 IF(EQEMU_BUILD_LUA)
 	TARGET_LINK_LIBRARIES(zone luabind ${LUA_LIBRARY})
 ENDIF(EQEMU_BUILD_LUA)
-
-
-IF(MSVC)
-	SET_TARGET_PROPERTIES(zone PROPERTIES LINK_FLAGS_RELEASE "/OPT:REF /OPT:ICF")
-	TARGET_LINK_LIBRARIES(zone "Ws2_32.lib")
-ENDIF(MSVC)
-
-IF(MINGW)
-	TARGET_LINK_LIBRARIES(zone "WS2_32")
-ENDIF(MINGW)
-
-IF(UNIX)
-	TARGET_LINK_LIBRARIES(zone "${CMAKE_DL_LIBS}")
-	TARGET_LINK_LIBRARIES(zone "z")
-	TARGET_LINK_LIBRARIES(zone "m")
-	IF(NOT DARWIN)
-		TARGET_LINK_LIBRARIES(zone "rt")
-	ENDIF(NOT DARWIN)
-	TARGET_LINK_LIBRARIES(zone "pthread")
-	ADD_DEFINITIONS(-fPIC)
-ENDIF(UNIX)
 
 SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR}/bin)

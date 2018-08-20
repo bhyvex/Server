@@ -127,7 +127,7 @@ struct LDoNTrapTemplate
 
 // All clients translate the character select information to some degree
 
-struct CharSelectEquip : EQEmu::Texture_Struct, EQEmu::Tint_Struct {};
+struct CharSelectEquip : EQEmu::textures::Texture_Struct, EQEmu::textures::Tint_Struct {};
 
 // RoF2-based hybrid struct
 struct CharacterSelectEntry_Struct
@@ -142,7 +142,7 @@ struct CharacterSelectEntry_Struct
 	uint16 Instance;
 	uint8 Gender;
 	uint8 Face;
-	CharSelectEquip	Equip[EQEmu::textures::TextureCount];
+	CharSelectEquip	Equip[EQEmu::textures::materialCount];
 	uint8 Unknown15;			// Seen FF
 	uint8 Unknown19;			// Seen FF
 	uint32 DrakkinTattoo;
@@ -280,7 +280,7 @@ union
 								// horse: 0=brown, 1=white, 2=black, 3=tan
 };
 /*0340*/ uint32 spawnId;		// Spawn Id
-/*0344*/ uint8 unknown0344[3];
+/*0344*/ float bounding_radius; // used in melee, overrides calc
 /*0347*/ uint8 IsMercenary;
 /*0348*/ EQEmu::TintProfile equipment_tint;
 /*0384*/ uint8	lfg;			// 0=off, 1=lfg on
@@ -305,6 +305,7 @@ union
 	uint8 DestructibleUnk8;
 	uint32 DestructibleUnk9;
 	bool targetable_with_hotkey;
+	bool show_name;
 
 };
 
@@ -550,6 +551,7 @@ struct BlockedBuffs_Struct
 /*86*/ uint16 Flags;
 };
 
+// same for adding
 struct RemoveNimbusEffect_Struct
 {
 /*00*/ uint32 spawnid;			// Spawn ID
@@ -729,7 +731,7 @@ struct BandolierItem_Struct
 struct Bandolier_Struct
 {
 	char Name[32];
-	BandolierItem_Struct Items[EQEmu::legacy::BANDOLIER_ITEM_COUNT];
+	BandolierItem_Struct Items[EQEmu::profile::BANDOLIER_ITEM_COUNT];
 };
 
 //len = 72
@@ -743,7 +745,7 @@ struct PotionBeltItem_Struct
 //len = 288
 struct PotionBelt_Struct
 {
-	PotionBeltItem_Struct Items[EQEmu::legacy::POTION_BELT_ITEM_COUNT];
+	PotionBeltItem_Struct Items[EQEmu::profile::POTION_BELT_SIZE];
 };
 
 struct MovePotionToBelt_Struct
@@ -834,7 +836,7 @@ struct SuspendedMinion_Struct
 	/*002*/	uint32 HP;
 	/*006*/	uint32 Mana;
 	/*010*/	SpellBuff_Struct Buffs[BUFF_COUNT];
-	/*510*/	EQEmu::TextureShortProfile Items;
+	/*510*/	EQEmu::TextureMaterialProfile Items;
 	/*546*/	char Name[64];
 	/*610*/
 };
@@ -853,6 +855,7 @@ static const uint32 MAX_PP_REF_SPELLBOOK = 480;	// Set for Player Profile size r
 static const uint32 MAX_PP_REF_MEMSPELL = 9; // Set for Player Profile size retain
 
 static const uint32 MAX_PP_SKILL		= PACKET_SKILL_ARRAY_SIZE;	// 100 - actual skills buffer size
+static const uint32 MAX_PP_INNATE_SKILL	= 25;
 static const uint32 MAX_PP_AA_ARRAY		= 240;
 static const uint32 MAX_GROUP_MEMBERS	= 6;
 static const uint32 MAX_RECAST_TYPES	= 20;
@@ -942,7 +945,7 @@ struct PlayerProfile_Struct
 /*0304*/	uint8				ability_time_minutes;
 /*0305*/	uint8				ability_time_hours;	//place holder
 /*0306*/	uint8				unknown0306[6];		// @bp Spacer/Flag?
-/*0312*/	EQEmu::TextureShortProfile	item_material;	// Item texture/material of worn/held items
+/*0312*/	EQEmu::TextureMaterialProfile	item_material;	// Item texture/material of worn/held items
 /*0348*/	uint8				unknown0348[44];
 /*0392*/	EQEmu::TintProfile	item_tint;
 /*0428*/	AA_Array			aa_array[MAX_PP_AA_ARRAY];
@@ -992,7 +995,8 @@ struct PlayerProfile_Struct
 /*4768*/	int32				platinum_shared;	// Platinum shared between characters
 /*4772*/	uint8				unknown4808[24];
 /*4796*/	uint32				skills[MAX_PP_SKILL];	// [400] List of skills	// 100 dword buffer
-/*5196*/	uint8				unknown5132[184];
+/*5196*/	uint32				InnateSkills[MAX_PP_INNATE_SKILL];
+/*5296*/	uint8				unknown5132[84];
 /*5380*/	uint32				pvp2;				//
 /*5384*/	uint32				unknown5420;		//
 /*5388*/	uint32				pvptype;			//
@@ -1045,7 +1049,7 @@ struct PlayerProfile_Struct
 /*7212*/	uint32				tribute_points;
 /*7216*/	uint32				unknown7252;
 /*7220*/	uint32				tribute_active;		//1=active
-/*7224*/	Tribute_Struct		tributes[EQEmu::legacy::TRIBUTE_SIZE];
+/*7224*/	Tribute_Struct		tributes[EQEmu::invtype::TRIBUTE_SIZE];
 /*7264*/	Disciplines_Struct	disciplines;
 /*7664*/	uint32				recastTimers[MAX_RECAST_TYPES];	// Timers (GMT of last use)
 /*7744*/	char				unknown7780[160];
@@ -1072,7 +1076,7 @@ struct PlayerProfile_Struct
 /*12800*/	uint32				expAA;
 /*12804*/	uint32				aapoints;			//avaliable, unspent
 /*12808*/	uint8				unknown12844[36];
-/*12844*/	Bandolier_Struct	bandoliers[EQEmu::legacy::BANDOLIERS_SIZE];
+/*12844*/	Bandolier_Struct	bandoliers[EQEmu::profile::BANDOLIERS_SIZE];
 /*14124*/	uint8				unknown14160[4506];
 /*18630*/	SuspendedMinion_Struct	SuspendedMinion; // No longer in use
 /*19240*/	uint32				timeentitledonaccount;
@@ -1114,6 +1118,11 @@ struct TargetReject_Struct {
 struct PetCommand_Struct {
 /*000*/ uint32	command;
 /*004*/ uint32	target;
+};
+
+struct PetCommandState_Struct {
+/*00*/	uint32	button_id;
+/*04*/	uint32	state;
 };
 
 /*
@@ -1179,7 +1188,7 @@ struct WearChange_Struct{
 /*010*/ uint32 elite_material;	// 1 for Drakkin Elite Material
 /*014*/ uint32 hero_forge_model; // New to VoA
 /*018*/ uint32 unknown18; // New to RoF
-/*022*/ EQEmu::Tint_Struct color;
+/*022*/ EQEmu::textures::Tint_Struct color;
 /*026*/ uint8 wear_slot_id;
 /*027*/
 };
@@ -1244,21 +1253,22 @@ struct Action_Struct
 {
  /* 00 */	uint16 target;	// id of target
  /* 02 */	uint16 source;	// id of caster
- /* 04 */	uint16 level; // level of caster
- /* 06 */	uint16 instrument_mod;
- /* 08 */	uint32 bard_focus_id;
- /* 12 */	uint16 unknown16;
-// some kind of sequence that's the same in both actions
-// as well as the combat damage, to tie em together?
- /* 14 */	uint32 sequence;
- /* 18 */	uint32 unknown18;
- /* 22 */	uint8 type;		// 231 (0xE7) for spells
- /* 23 */	uint32 unknown23;
+ /* 04 */	uint16 level; // level of caster for spells, OSX dump says attack rating, guess spells use it for level
+ /* 06 */	uint32 instrument_mod; // OSX dump says base damage, spells use it for bard song (different from newer clients)
+ /* 10 */	float force;
+ /* 14 */	float hit_heading;
+ /* 18 */	float hit_pitch;
+ /* 22 */	uint8 type;		// 231 (0xE7) for spells, skill
+ /* 23 */	uint16 unknown23; // OSX says min_damage
+ /* 25 */	uint16 unknown25; // OSX says tohit
  /* 27 */	uint16 spell;	// spell id being cast
- /* 29 */	uint8 unknown29;
+ /* 29 */	uint8 spell_level;
 // this field seems to be some sort of success flag, if it's 4
- /* 30 */	uint8 buff_unknown;	// if this is 4, a buff icon is made
- /* 31 */
+ /* 30 */	uint8 effect_flag;	// if this is 4, a buff icon is made
+// newer clients have some data for setting LaunchSpellData when effect_flag & 4
+// /* 31 */	uint8 spell_gem;
+// /* 32 */	uint32 inventory_slot;
+// /* 36 */	uint32 item_cast_type;
 };
 
 // this is what prints the You have been struck. and the regular
@@ -1268,12 +1278,12 @@ struct CombatDamage_Struct
 {
 /* 00 */	uint16	target;
 /* 02 */	uint16	source;
-/* 04 */	uint8	type; //slashing, etc. 231 (0xE7) for spells
+/* 04 */	uint8	type; //slashing, etc. 231 (0xE7) for spells, skill
 /* 05 */	uint16	spellid;
 /* 07 */	uint32	damage;
 /* 11 */	float force;
-/* 15 */	float meleepush_xy;	// see above notes in Action_Struct
-/* 19 */	float meleepush_z;
+/* 15 */	float hit_heading;	// see above notes in Action_Struct
+/* 19 */	float hit_pitch;
 /* 23 */	uint32 special; // 2 = Rampage, 1 = Wild Rampage
 };
 
@@ -1643,7 +1653,7 @@ struct LootingItem_Struct {
 /*002*/	uint32	looter;
 /*004*/	uint16	slot_id;
 /*006*/	uint8	unknown3[2];
-/*008*/	uint32	auto_loot;
+/*008*/	int32	auto_loot;
 };
 
 struct GuildManageStatus_Struct{
@@ -1690,6 +1700,7 @@ struct OnLevelMessage_Struct
 	uint32	Duration;
 	uint32	PopupID;
 	uint32	NegativeID;
+	uint32  SoundControls;
 	char	ButtonName0[25];
 	char	ButtonName1[25];
 };
@@ -1770,6 +1781,15 @@ struct CombatAbility_Struct {
 	uint32 m_target;		//the ID of the target mob
 	uint32 m_atk;
 	uint32 m_skill;
+};
+
+// Disarm Struct incoming from Client [Size: 16]
+struct Disarm_Struct
+{
+	uint32 source;
+	uint32 target;
+	uint32 skill;
+	uint32 unknown;
 };
 
 //Instill Doubt
@@ -2071,7 +2091,7 @@ struct AdventureLeaderboard_Struct
 /*struct Item_Shop_Struct {
 	uint16 merchantid;
 	uint8 itemtype;
-	EQEmu::ItemBase item;
+	EQEmu::ItemData item;
 	uint8 iss_unknown001[6];
 };*/
 
@@ -2243,6 +2263,7 @@ struct GroupFollow_Struct { // SoF Follow Struct
 /*0132*/
 };
 
+// this is generic struct
 struct GroupLeaderChange_Struct
 {
 /*000*/		char	Unknown000[64];
@@ -2495,6 +2516,7 @@ struct BookRequest_Struct {
 	uint8 window;	// where to display the text (0xFF means new window)
 	uint8 type;		//type: 0=scroll, 1=book, 2=item info.. prolly others.
 	uint32 invslot;	// Only used in Sof and later clients;
+	int16 subslot; // The subslot inside of a bag if it is inside one.
 	char txtfile[20];
 };
 
@@ -3311,23 +3333,32 @@ struct GuildMakeLeader{
 	char	target[64];
 };
 
-struct BugStruct{
-/*0000*/	char	chartype[64];
-/*0064*/	char	name[96];
-/*0160*/	char	ui[128];
-/*0288*/	float	x;
-/*0292*/	float	y;
-/*0296*/	float	z;
-/*0300*/	float	heading;
-/*0304*/	uint32	unknown304;
-/*0308*/	char	unknown308[160];
-/*0468*/	char	target_name[64];
-/*0532*/	uint32	type;
-/*0536*/	char	unknown536[2052];
-/*2584*/	char	bug[2048];
-/*4632*/	char	unknown4632[6];
-/*4638*/	char	system_info[4094];
+struct BugReport_Struct {
+/*0000*/	uint32	category_id;
+/*0004*/	char	category_name[64];
+/*0068*/	char	reporter_name[64];
+/*0132*/	char	unused_0132[32];
+/*0164*/	char	ui_path[128];
+/*0292*/	float	pos_x;
+/*0296*/	float	pos_y;
+/*0300*/	float	pos_z;
+/*0304*/	uint32	heading;
+/*0308*/	uint32	unused_0308;
+/*0312*/	uint32	time_played;
+/*0316*/	char	padding_0316[8];
+/*0324*/	uint32	target_id;
+/*0328*/	char	padding_0328[140];
+/*0468*/	uint32	unknown_0468;	// seems to always be '0'
+/*0472*/	char	target_name[64];
+/*0536*/	uint32	optional_info_mask;
+
+// this looks like a butchered 8k buffer with 2 trailing dword fields
+/*0540*/	char	unused_0540[2052];
+/*2592*/	char	bug_report[2050];
+/*4642*/	char	system_info[4098];
+/*8740*/
 };
+
 struct Make_Pet_Struct { //Simple struct for getting pet info
 	uint8 level;
 	uint8 class_;
@@ -3354,20 +3385,21 @@ struct Ground_Spawn{
 struct Ground_Spawns {
 	struct Ground_Spawn spawn[50]; //Assigned max number to allow
 };
-struct PetitionBug_Struct{
-	uint32	petition_number;
-	uint32	unknown4;
-	char	accountname[64];
-	uint32	zoneid;
-	char	name[64];
-	uint32	level;
-	uint32	class_;
-	uint32	race;
-	uint32	unknown152[3];
-	uint32	time;
-	uint32	unknown168;
-	char	text[1028];
-};
+
+//struct PetitionBug_Struct{
+//	uint32	petition_number;
+//	uint32	unknown4;
+//	char	accountname[64];
+//	uint32	zoneid;
+//	char	name[64];
+//	uint32	level;
+//	uint32	class_;
+//	uint32	race;
+//	uint32	unknown152[3];
+//	uint32	time;
+//	uint32	unknown168;
+//	char	text[1028];
+//};
 
 struct ApproveZone_Struct {
 	char	name[64];
@@ -3426,8 +3458,8 @@ struct SelectTributeReply_Struct {
 
 struct TributeInfo_Struct {
 	uint32	active;		//0 == inactive, 1 == active
-	uint32	tributes[EQEmu::legacy::TRIBUTE_SIZE];	//-1 == NONE
-	uint32	tiers[EQEmu::legacy::TRIBUTE_SIZE];		//all 00's
+	uint32	tributes[EQEmu::invtype::TRIBUTE_SIZE];	//-1 == NONE
+	uint32	tiers[EQEmu::invtype::TRIBUTE_SIZE];		//all 00's
 	uint32	tribute_master_id;
 };
 
@@ -3515,6 +3547,20 @@ struct RecipeAutoCombine_Struct {
 	uint32 reply_code;		// 93 64 e1 00 (junk) in request
 								// 00 00 00 00 in successful reply
 								// f5 ff ff ff in 'you dont have all the stuff' reply
+};
+
+// this is the "value#a" data
+enum EParticlePoint {
+	eDefault,
+	eChest,
+	eHead,
+	eLeftHand,
+	eRigthHand,
+	eLeftFoot,
+	eRightFood,
+	eLeftEye,
+	eRightEye,
+	eMouth
 };
 
 struct LevelAppearance_Struct { //Sends a little graphic on level up
@@ -3745,7 +3791,7 @@ struct AcceptNewTask_Struct {
 //was all 0's from client, server replied with same op, all 0's
 struct CancelTask_Struct {
 	uint32 SequenceNumber;
-	uint32 unknown4; // Only seen 0x00000002
+	uint32 type; // Only seen 0x00000002
 };
 
 #if 0
@@ -3799,28 +3845,28 @@ struct AvailableTaskTrailer_Struct {
 struct TaskDescriptionHeader_Struct {
 	uint32	SequenceNumber; // The order the tasks appear in the journal. 0 for first task, 1 for second, etc.
 	uint32	TaskID;
-	uint32	unknown2;
-	uint32	unknown3;
-	uint8	unknown4;
+	uint8	open_window;
+	uint32	task_type;
+	uint32	reward_type; // if this != 4 says Ebon Crystals else Radiant Crystals
 };
 
 struct TaskDescriptionData1_Struct {
 	uint32	Duration;
-	uint32	unknown2;
+	uint32	dur_code; // if Duration == 0
 	uint32	StartTime;
 };
 
 struct TaskDescriptionData2_Struct {
-	uint32	RewardCount; // ??
-	uint32	unknown1;
-	uint32	unknown2;
-	uint16	unknown3;
-	//uint8	unknown4;
+	uint8 	has_rewards;
+	uint32	coin_reward;
+	uint32	xp_reward;
+	uint32	faction_reward;
 };
 
 struct TaskDescriptionTrailer_Struct {
 	//uint16	unknown1; // 0x0012
 	uint32	Points;
+	uint8	has_reward_selection; // uses newer reward selection window, not in all clients
 };
 
 struct TaskActivityHeader_Struct {
@@ -3860,11 +3906,11 @@ struct TaskActivityShort_Struct {
 
 struct TaskActivityComplete_Struct {
 	uint32	TaskIndex;
-	uint32	unknown2; // 0x00000002
-	uint32	unknown3;
+	uint32	TaskType; // task, shared task, quest
+	uint32	TaskID;		// must match
 	uint32	ActivityID;
-	uint32	unknown4; // 0x00000001
-	uint32	unknown5; // 0x00000001
+	uint32	task_completed; // Broadcasts "Task '%1' Completed" it not 0 and "Task '%1' Failed." if 0
+	uint32	stage_complete; // Broadcasts "Task Stage Completed"
 };
 
 #if 0
@@ -4741,6 +4787,7 @@ struct BuffIconEntry_Struct
 	uint32 spell_id;
 	int32 tics_remaining;
 	uint32 num_hits;
+	char caster[64];
 };
 
 struct BuffIcon_Struct
@@ -4750,6 +4797,7 @@ struct BuffIcon_Struct
 	uint16 count;
 	uint8 type; // 0 = self buff window, 1 = self target window, 4 = group, 5 = PC, 7 = NPC
 	int32 tic_timer;
+	int32 name_lengths; // so ahh we kind of do these packets hacky, this is the total length of all the names to make creating the real packets in the translators easier
 	BuffIconEntry_Struct entries[0];
 };
 
@@ -5263,7 +5311,7 @@ struct MercenaryMerchantResponse_Struct {
 struct ServerLootItem_Struct {
 	uint32	item_id;	  // uint32	item_id;
 	int16	equip_slot;	  // int16	equip_slot;
-	uint16	charges;	  // uint8	charges; 
+	uint16	charges;	  // uint8	charges;
 	uint16	lootslot;	  // uint16	lootslot;
 	uint32	aug_1;		  // uint32	aug_1;
 	uint32	aug_2;		  // uint32	aug_2;
@@ -5291,7 +5339,7 @@ struct ClientMarqueeMessage_Struct {
 	uint32 fade_out_time; //The fade out time, in ms
 	uint32 duration; //in ms
 	char msg[1]; //message plus null terminator
-	
+
 };
 
 typedef std::list<ServerLootItem_Struct*> ItemList;
@@ -5308,6 +5356,41 @@ struct fling_struct {
 /* 20 */ float new_x;
 /* 24 */ float new_z;
 /* 28 */
+};
+
+// used when action == 0
+struct AuraCreate_Struct {
+/* 00 */	uint32 action; // 0 = add, 1 = delete, 2 = reset
+/* 04 */	uint32 type; // unsure -- normal auras show 1 clicky (ex. Circle of Power) show 0
+/* 08 */	char aura_name[64];
+/* 72 */	uint32 entity_id;
+/* 76 */	uint32 icon;
+/* 80 */
+};
+
+// used when action == 1
+struct AuraDestory_Struct {
+/* 00 */	uint32 action; // 0 = add, 1 = delete, 2 = reset
+/* 04 */	uint32 entity_id;
+/* 08 */
+};
+// I think we can assume it's just action for 2, client doesn't seem to do anything with the rest of the data in that case
+
+struct SayLinkBodyFrame_Struct {
+/*000*/	char ActionID[1];
+/*001*/	char ItemID[5];
+/*006*/	char Augment1[5];
+/*011*/	char Augment2[5];
+/*016*/	char Augment3[5];
+/*021*/	char Augment4[5];
+/*026*/	char Augment5[5];
+/*031*/	char Augment6[5];
+/*036*/	char IsEvolving[1];
+/*037*/	char EvolveGroup[4];
+/*041*/	char EvolveLevel[2];
+/*043*/	char OrnamentIcon[5];
+/*048*/	char Hash[8];
+/*056*/
 };
 
 // Restore structure packing to default

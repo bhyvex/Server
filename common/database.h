@@ -37,9 +37,13 @@
 //atoi is not uint32 or uint32 safe!!!!
 #define atoul(str) strtoul(str, nullptr, 10)
 
-class Inventory;
 class MySQLRequestResult;
 class Client;
+
+namespace EQEmu
+{
+	class InventoryProfile;
+}
 
 struct EventLogDetails_Struct {
 	uint32	id;
@@ -109,7 +113,7 @@ public:
 	bool	SaveCharacterCreate(uint32 character_id, uint32 account_id, PlayerProfile_Struct* pp);
 	bool	SetHackerFlag(const char* accountname, const char* charactername, const char* hacked);
 	bool	SetMQDetectionFlag(const char* accountname, const char* charactername, const char* hacked, const char* zone);
-	bool	StoreCharacter(uint32 account_id, PlayerProfile_Struct* pp, Inventory* inv);
+	bool	StoreCharacter(uint32 account_id, PlayerProfile_Struct* pp, EQEmu::InventoryProfile* inv);
 	bool	UpdateName(const char* oldname, const char* newname);
 
 	/* General Information Queries */
@@ -216,6 +220,8 @@ public:
 	void	GetGroupLeadershipInfo(uint32 gid, uint32 rid, char* maintank = nullptr, char* assist = nullptr, char* puller = nullptr, char *marknpc = nullptr, char *mentoree = nullptr, int *mentor_percent = nullptr, GroupLeadershipAA_Struct* GLAA = nullptr);
 	void	GetRaidLeadershipInfo(uint32 rid, char* maintank = nullptr, char* assist = nullptr, char* puller = nullptr, char *marknpc = nullptr, RaidLeadershipAA_Struct* RLAA = nullptr);
 	void	SetRaidGroupLeaderInfo(uint32 gid, uint32 rid);
+
+	void    PurgeAllDeletedDataBuckets();
 
 	/* Database Conversions 'database_conversions.cpp' */
 

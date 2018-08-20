@@ -38,6 +38,7 @@
 	#include <unistd.h>
 #endif
 
+#include "../common/data_verification.h"
 #include "../common/rulesys.h"
 #include "../common/skills.h"
 #include "../common/spdat.h"
@@ -63,66 +64,51 @@ extern EntityList entity_list;
 bool Client::Process() {
 	bool ret = true;
 
-	if(Connected() || IsLD())
-	{
+	if (Connected() || IsLD()) {
 		// try to send all packets that weren't sent before
-		if (!IsLD() && zoneinpacket_timer.Check())
-		{
+		if (!IsLD() && zoneinpacket_timer.Check()) {
 			SendAllPackets();
 		}
 
-		if(adventure_request_timer)
-		{
-			if(adventure_request_timer->Check())
-			{
+		if (adventure_request_timer) {
+			if (adventure_request_timer->Check()) {
 				safe_delete(adventure_request_timer);
 			}
 		}
 
-		if(adventure_create_timer)
-		{
-			if(adventure_create_timer->Check())
-			{
+		if (adventure_create_timer) {
+			if (adventure_create_timer->Check()) {
 				safe_delete(adventure_create_timer);
 			}
 		}
 
-		if(adventure_leave_timer)
-		{
-			if(adventure_leave_timer->Check())
-			{
+		if (adventure_leave_timer) {
+			if (adventure_leave_timer->Check()) {
 				safe_delete(adventure_leave_timer);
 			}
 		}
 
-		if(adventure_door_timer)
-		{
-			if(adventure_door_timer->Check())
-			{
+		if (adventure_door_timer) {
+			if (adventure_door_timer->Check()) {
 				safe_delete(adventure_door_timer);
 			}
 		}
 
-		if(adventure_stats_timer)
-		{
-			if(adventure_stats_timer->Check())
-			{
+		if (adventure_stats_timer) {
+			if (adventure_stats_timer->Check()) {
 				safe_delete(adventure_stats_timer);
 			}
 		}
 
-		if(adventure_leaderboard_timer)
-		{
-			if(adventure_leaderboard_timer->Check())
-			{
+		if (adventure_leaderboard_timer) {
+			if (adventure_leaderboard_timer->Check()) {
 				safe_delete(adventure_leaderboard_timer);
 			}
 		}
 
-		if(dead)
-		{
+		if (dead) {
 			SetHP(-100);
-			if(RespawnFromHoverTimer.Check())
+			if (RespawnFromHoverTimer.Check())
 				HandleRespawnFromHover(0);
 		}
 
@@ -131,13 +117,18 @@ bool Client::Process() {
 
 		// SendHPUpdate calls hpupdate_timer.Start so it can delay this timer, so lets not reset with the check
 		// since the function will anyways
-		if(hpupdate_timer.Check(false))
+		if (hpupdate_timer.Check(false))
 			SendHPUpdate();
 
-		if(mana_timer.Check())
-			SendManaUpdatePacket();
+		/* I haven't naturally updated my position in 10 seconds, updating manually */
+		if (!is_client_moving && position_update_timer.Check()) {
+			SendPositionUpdate();
+		}
 
-		if(dead && dead_timer.Check()) {
+		if (mana_timer.Check())
+			CheckManaEndUpdate();
+
+		if (dead && dead_timer.Check()) {
 			database.MoveCharacterToZone(GetName(), database.GetZoneName(m_pp.binds[0].zoneId));
 
 			m_pp.zone_id = m_pp.binds[0].zoneId;
@@ -150,7 +141,7 @@ bool Client::Process() {
 			Group *mygroup = GetGroup();
 			if (mygroup)
 			{
-				entity_list.MessageGroup(this,true,15,"%s died.", GetName());
+				entity_list.MessageGroup(this, true, 15, "%s died.", GetName());
 				mygroup->MemberZoned(this);
 			}
 			Raid *myraid = entity_list.GetRaidByClient(this);
@@ -161,34 +152,29 @@ bool Client::Process() {
 			return(false);
 		}
 
-		if(charm_update_timer.Check())
-		{
+		if (charm_update_timer.Check()) {
 			CalcItemScale();
 		}
 
-		if(TaskPeriodic_Timer.Check() && taskstate)
+		if (TaskPeriodic_Timer.Check() && taskstate)
 			taskstate->TaskPeriodicChecks(this);
 
-		if(linkdead_timer.Check())
-		{
+		if (linkdead_timer.Check()) {
 			LeaveGroup();
 			Save();
-			if (GetMerc())
-			{
+			if (GetMerc()) {
 				GetMerc()->Save();
 				GetMerc()->Depop();
 			}
 
 			Raid *myraid = entity_list.GetRaidByClient(this);
-			if (myraid)
-			{
+			if (myraid) {
 				myraid->MemberZoned(this);
 			}
 			return false; //delete client
 		}
 
-		if (camp_timer.Check())
-		{
+		if (camp_timer.Check()) {
 			LeaveGroup();
 			Save();
 			if (GetMerc())
@@ -202,41 +188,40 @@ bool Client::Process() {
 		if (IsStunned() && stunned_timer.Check())
 			Mob::UnStun();
 
-		if(!m_CheatDetectMoved)
-		{
+		if (!m_CheatDetectMoved) {
 			m_TimeSinceLastPositionCheck = Timer::GetCurrentTime();
 		}
 
 		if (bardsong_timer.Check() && bardsong != 0) {
 			//NOTE: this is kinda a heavy-handed check to make sure the mob still exists before
 			//doing the next pulse on them...
-			Mob *song_target;
-			if(bardsong_target_id == GetID()) {
+			Mob *song_target = nullptr;
+			if (bardsong_target_id == GetID()) {
 				song_target = this;
-			} else {
+			}
+			else {
 				song_target = entity_list.GetMob(bardsong_target_id);
 			}
 
 			if (song_target == nullptr) {
 				InterruptSpell(SONG_ENDS_ABRUPTLY, 0x121, bardsong);
-			} else {
-				if(!ApplyNextBardPulse(bardsong, song_target, bardsong_slot))
+			}
+			else {
+				if (!ApplyNextBardPulse(bardsong, song_target, bardsong_slot))
 					InterruptSpell(SONG_ENDS_ABRUPTLY, 0x121, bardsong);
 				//SpellFinished(bardsong, bardsong_target, bardsong_slot, spells[bardsong].mana);
 			}
 		}
 
-		if(GetMerc())
-		{
+		if (GetMerc()) {
 			UpdateMercTimer();
 		}
 
-		if(GetMercInfo().MercTemplateID != 0 && GetMercInfo().IsSuspended)
-		{
+		if (GetMercInfo().MercTemplateID != 0 && GetMercInfo().IsSuspended) {
 			CheckMercSuspendTimer();
 		}
 
-		if(IsAIControlled())
+		if (IsAIControlled())
 			AI_Process();
 
 		// Don't reset the bindwound timer so we can check it in BindWound as well.
@@ -244,28 +229,57 @@ bool Client::Process() {
 			BindWound(bindwound_target, false);
 		}
 
-		if(KarmaUpdateTimer)
-		{
-			if(KarmaUpdateTimer->Check(false))
-			{
+		if (KarmaUpdateTimer) {
+			if (KarmaUpdateTimer->Check(false)) {
 				KarmaUpdateTimer->Start(RuleI(Chat, KarmaUpdateIntervalMS));
 				database.UpdateKarma(AccountID(), ++TotalKarma);
 			}
 		}
 
-		if(qGlobals)
-		{
-			if(qglobal_purge_timer.Check())
-			{
+		if (qGlobals) {
+			if (qglobal_purge_timer.Check()) {
 				qGlobals->PurgeExpiredGlobals();
 			}
 		}
 
-		if(light_update_timer.Check()) {
+		/* Build a close range list of NPC's  */
+		if (npc_close_scan_timer.Check()) {
+			close_mobs.clear();
 
-			UpdateEquipmentLight();
-			if(UpdateActiveLight()) {
-				SendAppearancePacket(AT_Light, GetActiveLightType());
+			/* Force spawn updates when traveled far */
+			bool force_spawn_updates = false;
+			float client_update_range = (RuleI(Range, ClientForceSpawnUpdateRange) *  RuleI(Range, ClientForceSpawnUpdateRange));
+			if (DistanceSquared(last_major_update_position, m_Position) >= client_update_range) {
+				last_major_update_position = m_Position;
+				force_spawn_updates = true;
+			}
+
+			float scan_range = (RuleI(Range, ClientNPCScan) * RuleI(Range, ClientNPCScan));
+			auto &mob_list = entity_list.GetMobList();
+			for (auto itr = mob_list.begin(); itr != mob_list.end(); ++itr) {
+				Mob* mob = itr->second;
+
+				float distance = DistanceSquared(m_Position, mob->GetPosition());
+				if (mob->IsNPC()) {
+					if (distance <= scan_range) {
+						close_mobs.insert(std::pair<Mob *, float>(mob, distance));
+					}
+					else if ((mob->GetAggroRange() * mob->GetAggroRange()) > scan_range) {
+						close_mobs.insert(std::pair<Mob *, float>(mob, distance));
+					}
+				}
+
+				if (force_spawn_updates && mob != this) {
+
+					if (mob->is_distance_roamer) {
+						mob->SendPositionUpdateToClient(this);
+						continue;
+					}
+
+					if (distance <= client_update_range)
+						mob->SendPositionUpdateToClient(this);
+				}
+
 			}
 		}
 
@@ -279,35 +293,35 @@ bool Client::Process() {
 				- being stunned or mezzed
 				- having used a ranged weapon recently
 		*/
-		if(auto_attack) {
-			if(!IsAIControlled() && !dead
+		if (auto_attack) {
+			if (!IsAIControlled() && !dead
 				&& !(spellend_timer.Enabled() && casting_spell_id && !IsBardSong(casting_spell_id))
 				&& !IsStunned() && !IsFeared() && !IsMezzed() && GetAppearance() != eaDead && !IsMeleeDisabled()
 				)
 				may_use_attacks = true;
 
-			if(may_use_attacks && ranged_timer.Enabled()) {
+			if (may_use_attacks && ranged_timer.Enabled()) {
 				//if the range timer is enabled, we need to consider it
-				if(!ranged_timer.Check(false)) {
+				if (!ranged_timer.Check(false)) {
 					//the ranged timer has not elapsed, cannot attack.
 					may_use_attacks = false;
 				}
 			}
 		}
 
-		if(AutoFireEnabled()){
-			ItemInst *ranged = GetInv().GetItem(EQEmu::legacy::SlotRange);
-			if(ranged)
+		if (AutoFireEnabled()) {
+			EQEmu::ItemInstance *ranged = GetInv().GetItem(EQEmu::invslot::slotRange);
+			if (ranged)
 			{
-				if (ranged->GetItem() && ranged->GetItem()->ItemType == EQEmu::item::ItemTypeBow){
-					if(ranged_timer.Check(false)){
-						if(GetTarget() && (GetTarget()->IsNPC() || GetTarget()->IsClient())){
-							if(GetTarget()->InFrontMob(this, GetTarget()->GetX(), GetTarget()->GetY())){
-								if(CheckLosFN(GetTarget())){
+				if (ranged->GetItem() && ranged->GetItem()->ItemType == EQEmu::item::ItemTypeBow) {
+					if (ranged_timer.Check(false)) {
+						if (GetTarget() && (GetTarget()->IsNPC() || GetTarget()->IsClient())) {
+							if (GetTarget()->InFrontMob(this, GetTarget()->GetX(), GetTarget()->GetY())) {
+								if (CheckLosFN(GetTarget())) {
 									//client has built in los check, but auto fire does not.. done last.
 									RangedAttack(GetTarget());
-										if (CheckDoubleRangedAttack())
-											RangedAttack(GetTarget(), true);
+									if (CheckDoubleRangedAttack())
+										RangedAttack(GetTarget(), true);
 								}
 								else
 									ranged_timer.Start();
@@ -319,11 +333,11 @@ bool Client::Process() {
 							ranged_timer.Start();
 					}
 				}
-				else if (ranged->GetItem() && (ranged->GetItem()->ItemType == EQEmu::item::ItemTypeLargeThrowing || ranged->GetItem()->ItemType == EQEmu::item::ItemTypeSmallThrowing)){
-					if(ranged_timer.Check(false)){
-						if(GetTarget() && (GetTarget()->IsNPC() || GetTarget()->IsClient())){
-							if(GetTarget()->InFrontMob(this, GetTarget()->GetX(), GetTarget()->GetY())){
-								if(CheckLosFN(GetTarget())){
+				else if (ranged->GetItem() && (ranged->GetItem()->ItemType == EQEmu::item::ItemTypeLargeThrowing || ranged->GetItem()->ItemType == EQEmu::item::ItemTypeSmallThrowing)) {
+					if (ranged_timer.Check(false)) {
+						if (GetTarget() && (GetTarget()->IsNPC() || GetTarget()->IsClient())) {
+							if (GetTarget()->InFrontMob(this, GetTarget()->GetX(), GetTarget()->GetY())) {
+								if (CheckLosFN(GetTarget())) {
 									//client has built in los check, but auto fire does not.. done last.
 									ThrowingAttack(GetTarget());
 								}
@@ -345,9 +359,9 @@ bool Client::Process() {
 		{
 			//check if change
 			//only check on primary attack.. sorry offhand you gotta wait!
-			if(aa_los_them_mob)
+			if (aa_los_them_mob)
 			{
-				if(auto_attack_target != aa_los_them_mob ||
+				if (auto_attack_target != aa_los_them_mob ||
 					m_AutoAttackPosition.x != GetX() ||
 					m_AutoAttackPosition.y != GetY() ||
 					m_AutoAttackPosition.z != GetZ() ||
@@ -379,11 +393,11 @@ bool Client::Process() {
 
 			if (!CombatRange(auto_attack_target))
 			{
-				Message_StringID(MT_TooFarAway,TARGET_TOO_FAR);
+				Message_StringID(MT_TooFarAway, TARGET_TOO_FAR);
 			}
 			else if (auto_attack_target == this)
 			{
-				Message_StringID(MT_TooFarAway,TRY_ATTACKING_SOMEONE);
+				Message_StringID(MT_TooFarAway, TRY_ATTACKING_SOMEONE);
 			}
 			else if (!los_status || !los_status_facing)
 			{
@@ -391,10 +405,11 @@ bool Client::Process() {
 			}
 			else if (auto_attack_target->GetHP() > -10) // -10 so we can watch people bleed in PvP
 			{
-				ItemInst *wpn = GetInv().GetItem(EQEmu::legacy::SlotPrimary);
-				TryWeaponProc(wpn, auto_attack_target, EQEmu::legacy::SlotPrimary);
+				EQEmu::ItemInstance *wpn = GetInv().GetItem(EQEmu::invslot::slotPrimary);
+				TryWeaponProc(wpn, auto_attack_target, EQEmu::invslot::slotPrimary);
+				TriggerDefensiveProcs(auto_attack_target, EQEmu::invslot::slotPrimary, false);
 
-				DoAttackRounds(auto_attack_target, EQEmu::legacy::SlotPrimary);
+				DoAttackRounds(auto_attack_target, EQEmu::invslot::slotPrimary);
 				if (CheckAATimer(aaTimerRampage))
 					entity_list.AEAttack(this, 30);
 			}
@@ -411,29 +426,29 @@ bool Client::Process() {
 			}
 		}
 
-		if(auto_attack && may_use_attacks && auto_attack_target != nullptr
+		if (auto_attack && may_use_attacks && auto_attack_target != nullptr
 			&& CanThisClassDualWield() && attack_dw_timer.Check())
 		{
 			// Range check
-			if(!CombatRange(auto_attack_target)) {
+			if (!CombatRange(auto_attack_target)) {
 				// this is a duplicate message don't use it.
 				//Message_StringID(MT_TooFarAway,TARGET_TOO_FAR);
 			}
 			// Don't attack yourself
-			else if(auto_attack_target == this) {
+			else if (auto_attack_target == this) {
 				//Message_StringID(MT_TooFarAway,TRY_ATTACKING_SOMEONE);
 			}
 			else if (!los_status || !los_status_facing)
 			{
 				//you can't see your target
 			}
-			else if(auto_attack_target->GetHP() > -10) {
+			else if (auto_attack_target->GetHP() > -10) {
 				CheckIncreaseSkill(EQEmu::skills::SkillDualWield, auto_attack_target, -10);
 				if (CheckDualWield()) {
-					ItemInst *wpn = GetInv().GetItem(EQEmu::legacy::SlotSecondary);
-					TryWeaponProc(wpn, auto_attack_target, EQEmu::legacy::SlotSecondary);
+					EQEmu::ItemInstance *wpn = GetInv().GetItem(EQEmu::invslot::slotSecondary);
+					TryWeaponProc(wpn, auto_attack_target, EQEmu::invslot::slotSecondary);
 
-					DoAttackRounds(auto_attack_target, EQEmu::legacy::SlotSecondary);
+					DoAttackRounds(auto_attack_target, EQEmu::invslot::slotSecondary);
 				}
 			}
 		}
@@ -441,18 +456,18 @@ bool Client::Process() {
 		if (position_timer.Check()) {
 			if (IsAIControlled())
 			{
-				if(!IsMoving())
+				if (!IsMoving())
 				{
 					animation = 0;
 					m_Delta = glm::vec4(0.0f, 0.0f, 0.0f, m_Delta.w);
-					SendPosUpdate(2);
+					SendPositionUpdate(2);
 				}
 			}
 
 			// Send a position packet every 8 seconds - if not done, other clients
 			// see this char disappear after 10-12 seconds of inactivity
 			if (position_timer_counter >= 36) { // Approx. 4 ticks per second
-				entity_list.SendPositionUpdates(this, pLastUpdateWZ, 500, GetTarget(), true);
+				entity_list.SendPositionUpdates(this, pLastUpdateWZ, RuleI(Range, MobPositionUpdates), GetTarget(), true);
 				pLastUpdate = Timer::GetCurrentTime();
 				pLastUpdateWZ = pLastUpdate;
 				position_timer_counter = 0;
@@ -463,25 +478,25 @@ bool Client::Process() {
 			}
 		}
 
-		if(HasVirus()) {
-			if(viral_timer.Check()) {
+		if (HasVirus()) {
+			if (viral_timer.Check()) {
 				viral_timer_counter++;
-				for(int i = 0; i < MAX_SPELL_TRIGGER*2; i+=2) {
-					if(viral_spells[i])	{
-						if(viral_timer_counter % spells[viral_spells[i]].viral_timer == 0) {
-							SpreadVirus(viral_spells[i], viral_spells[i+1]);
+				for (int i = 0; i < MAX_SPELL_TRIGGER * 2; i += 2) {
+					if (viral_spells[i]) {
+						if (viral_timer_counter % spells[viral_spells[i]].viral_timer == 0) {
+							SpreadVirus(viral_spells[i], viral_spells[i + 1]);
 						}
 					}
 				}
 			}
-			if(viral_timer_counter > 999)
+			if (viral_timer_counter > 999)
 				viral_timer_counter = 0;
 		}
 
 		ProjectileAttack();
 
-		if(spellbonuses.GravityEffect == 1) {
-			if(gravity_timer.Check())
+		if (spellbonuses.GravityEffect == 1) {
+			if (gravity_timer.Check())
 				DoGravityEffect();
 		}
 
@@ -513,9 +528,13 @@ bool Client::Process() {
 		}
 
 		SpellProcess();
-		if (endupkeep_timer.Check() && !dead){
+		if (endupkeep_timer.Check() && !dead) {
 			DoEnduranceUpkeep();
 		}
+
+		// this is independent of the tick timer
+		if (consume_food_timer.Check())
+			DoStaminaHungerUpdate();
 
 		if (tic_timer.Check() && !dead) {
 			CalcMaxHP();
@@ -527,9 +546,8 @@ bool Client::Process() {
 			DoManaRegen();
 			DoEnduranceRegen();
 			BuffProcess();
-			DoStaminaUpdate();
 
-			if(tribute_timer.Check()) {
+			if (tribute_timer.Check()) {
 				ToggleTribute(true);	//re-activate the tribute.
 			}
 
@@ -541,18 +559,18 @@ bool Client::Process() {
 				Save(0);
 			}
 
-			if(m_pp.intoxication > 0)
+			if (m_pp.intoxication > 0)
 			{
 				--m_pp.intoxication;
 				CalcBonuses();
 			}
 
-			if(ItemTickTimer.Check())
+			if (ItemTickTimer.Check())
 			{
 				TickItemCheck();
 			}
 
-			if(ItemQuestTimer.Check())
+			if (ItemQuestTimer.Check())
 			{
 				ItemTimerCheck();
 			}
@@ -581,7 +599,7 @@ bool Client::Process() {
 
 	if (client_state != CLIENT_LINKDEAD && !eqs->CheckState(ESTABLISHED)) {
 		OnDisconnect(true);
-		Log.Out(Logs::General, Logs::Zone_Server, "Client linkdead: %s", name);
+		Log(Logs::General, Logs::Zone_Server, "Client linkdead: %s", name);
 
 		if (GetGM()) {
 			if (GetMerc())
@@ -591,8 +609,8 @@ bool Client::Process() {
 			}
 			return false;
 		}
-		else if(!linkdead_timer.Enabled()){
-			linkdead_timer.Start(RuleI(Zone,ClientLinkdeadMS));
+		else if (!linkdead_timer.Enabled()) {
+			linkdead_timer.Start(RuleI(Zone, ClientLinkdeadMS));
 			client_state = CLIENT_LINKDEAD;
 			AI_Start(CLIENT_LD_TIMEOUT);
 			SendAppearancePacket(AT_Linkdead, 1);
@@ -602,39 +620,51 @@ bool Client::Process() {
 
 	/************ Get all packets from packet manager out queue and process them ************/
 	EQApplicationPacket *app = nullptr;
-	if(!eqs->CheckState(CLOSING))
+	if (!eqs->CheckState(CLOSING))
 	{
-		while(ret && (app = (EQApplicationPacket *)eqs->PopPacket())) {
-			if(app)
-				ret = HandlePacket(app);
+		while (app = eqs->PopPacket()) {
+			HandlePacket(app);
 			safe_delete(app);
 		}
 	}
 
-#ifdef REVERSE_AGGRO
 	//At this point, we are still connected, everything important has taken
 	//place, now check to see if anybody wants to aggro us.
 	// only if client is not feigned
-	if(ret && !GetFeigned() && scanarea_timer.Check()) {
-		entity_list.CheckClientAggro(this);
+	if (zone->CanDoCombat() && ret && !GetFeigned() && client_scan_npc_aggro_timer.Check()) {
+		int npc_scan_count = 0;
+		for (auto it = close_mobs.begin(); it != close_mobs.end(); ++it) {
+			Mob *mob = it->first;
+
+			if (!mob)
+				continue;
+
+			if (mob->IsClient())
+				continue;
+
+			if (mob->CheckWillAggro(this) && !mob->CheckAggro(this)) {
+				mob->AddToHateList(this, 25);
+			}
+			npc_scan_count++;
+		}
+		Log(Logs::General, Logs::Aggro, "Checking Reverse Aggro (client->npc) scanned_npcs (%i)", npc_scan_count);
 	}
-#endif
 
 	if (client_state != CLIENT_LINKDEAD && (client_state == CLIENT_ERROR || client_state == DISCONNECTED || client_state == CLIENT_KICKED || !eqs->CheckState(ESTABLISHED)))
 	{
 		//client logged out or errored out
 		//ResetTrade();
-		if (client_state != CLIENT_KICKED && !zoning && !instalog) {
+		if (client_state != CLIENT_KICKED && !bZoning && !instalog) {
 			Save();
 		}
 
 		client_state = CLIENT_LINKDEAD;
-		if (zoning || instalog || GetGM())
+		if (bZoning || instalog || GetGM())
 		{
 			Group *mygroup = GetGroup();
 			if (mygroup)
 			{
-				if (!zoning)
+				if (!bZoning)
 				{
 					entity_list.MessageGroup(this, true, 15, "%s logged out.", GetName());
 					LeaveGroup();
@@ -653,7 +683,7 @@ bool Client::Process() {
 			Raid *myraid = entity_list.GetRaidByClient(this);
 			if (myraid)
 			{
-				if (!zoning)
+				if (!bZoning)
 				{
 					//entity_list.MessageGroup(this,true,15,"%s logged out.",GetName());
 					myraid->MemberZoned(this);
@@ -678,6 +708,13 @@ bool Client::Process() {
 		forget_timer.Disable();
 		entity_list.ClearZoneFeignAggro(this);
 		Message(0, "Your enemies have forgotten you!");
+	}
+
+	if (client_state == CLIENT_CONNECTED) {
+		if (m_dirtyautohaters)
+			ProcessXTargetAutoHaters();
+		if (aggro_meter_timer.Check())
+			ProcessAggroMeter();
 	}
 
 	return ret;
@@ -707,10 +744,12 @@ void Client::OnDisconnect(bool hard_disconnect) {
 		}
 	}
 
+	RemoveAllAuras();
+
 	Mob *Other = trade->With();
 	if(Other)
 	{
-		Log.Out(Logs::Detail, Logs::Trading, "Client disconnected during a trade. Returning their items.");
+		Log(Logs::Detail, Logs::Trading, "Client disconnected during a trade. Returning their items.");
 		FinishTrade(this);
 
 		if(Other->IsClient())
@@ -737,12 +776,12 @@ void Client::BulkSendInventoryItems()
 {
 	// LINKDEAD TRADE ITEMS
 	// Move trade slot items back into normal inventory..need them there now for the proceeding validity checks
-	for (int16 slot_id = EQEmu::legacy::TRADE_BEGIN; slot_id <= EQEmu::legacy::TRADE_END; slot_id++) {
-		ItemInst* inst = m_inv.PopItem(slot_id);
+	for (int16 slot_id = EQEmu::invslot::TRADE_BEGIN; slot_id <= EQEmu::invslot::TRADE_END; slot_id++) {
+		EQEmu::ItemInstance* inst = m_inv.PopItem(slot_id);
 		if(inst) {
 			bool is_arrow = (inst->GetItem()->ItemType == EQEmu::item::ItemTypeArrow) ? true : false;
 			int16 free_slot_id = m_inv.FindFreeSlot(inst->IsClassBag(), true, inst->GetItem()->Size, is_arrow);
-			Log.Out(Logs::Detail, Logs::Inventory, "Incomplete Trade Transaction: Moving %s from slot %i to %i", inst->GetItem()->Name, slot_id, free_slot_id);
+			Log(Logs::Detail, Logs::Inventory, "Incomplete Trade Transaction: Moving %s from slot %i to %i", inst->GetItem()->Name, slot_id, free_slot_id);
 			PutItemInInventory(free_slot_id, *inst, false);
 			database.SaveInventory(character_id, nullptr, slot_id);
 			safe_delete(inst);
@@ -763,56 +802,56 @@ void Client::BulkSendInventoryItems()
 	EQEmu::OutBuffer::pos_type last_pos = ob.tellp();
 
 	// Possessions items
-	for (int16 slot_id = SLOT_BEGIN; slot_id < EQEmu::legacy::TYPE_POSSESSIONS_SIZE; slot_id++) {
-		const ItemInst* inst = m_inv[slot_id];
+	for (int16 slot_id = EQEmu::invslot::POSSESSIONS_BEGIN; slot_id <= EQEmu::invslot::POSSESSIONS_END; slot_id++) {
+		const EQEmu::ItemInstance* inst = m_inv[slot_id];
 		if (!inst)
 			continue;
 
 		inst->Serialize(ob, slot_id);
 
 		if (ob.tellp() == last_pos)
-			Log.Out(Logs::General, Logs::Inventory, "Serialization failed on item slot %d during BulkSendInventoryItems.  Item skipped.", slot_id);
+			Log(Logs::General, Logs::Inventory, "Serialization failed on item slot %d during BulkSendInventoryItems.  Item skipped.", slot_id);
 		
 		last_pos = ob.tellp();
 	}
 
 	// PowerSource item
 	if (ClientVersion() >= EQEmu::versions::ClientVersion::SoF) {
-		const ItemInst* inst = m_inv[EQEmu::legacy::SlotPowerSource];
+		const EQEmu::ItemInstance* inst = m_inv[EQEmu::invslot::SLOT_POWER_SOURCE];
 		if (inst) {
-			inst->Serialize(ob, EQEmu::legacy::SlotPowerSource);
+			inst->Serialize(ob, EQEmu::invslot::SLOT_POWER_SOURCE);
 
 			if (ob.tellp() == last_pos)
-				Log.Out(Logs::General, Logs::Inventory, "Serialization failed on item slot %d during BulkSendInventoryItems.  Item skipped.", EQEmu::legacy::SlotPowerSource);
+				Log(Logs::General, Logs::Inventory, "Serialization failed on item slot %d during BulkSendInventoryItems.  Item skipped.", EQEmu::invslot::SLOT_POWER_SOURCE);
 
 			last_pos = ob.tellp();
 		}
 	}
 
 	// Bank items
-	for (int16 slot_id = EQEmu::legacy::BANK_BEGIN; slot_id <= EQEmu::legacy::BANK_END; slot_id++) {
-		const ItemInst* inst = m_inv[slot_id];
+	for (int16 slot_id = EQEmu::invslot::BANK_BEGIN; slot_id <= EQEmu::invslot::BANK_END; slot_id++) {
+		const EQEmu::ItemInstance* inst = m_inv[slot_id];
 		if (!inst)
 			continue;
 
 		inst->Serialize(ob, slot_id);
 
 		if (ob.tellp() == last_pos)
-			Log.Out(Logs::General, Logs::Inventory, "Serialization failed on item slot %d during BulkSendInventoryItems.  Item skipped.", slot_id);
+			Log(Logs::General, Logs::Inventory, "Serialization failed on item slot %d during BulkSendInventoryItems.  Item skipped.", slot_id);
 
 		last_pos = ob.tellp();
 	}
 
 	// SharedBank items
-	for (int16 slot_id = EQEmu::legacy::SHARED_BANK_BEGIN; slot_id <= EQEmu::legacy::SHARED_BANK_END; slot_id++) {
-		const ItemInst* inst = m_inv[slot_id];
+	for (int16 slot_id = EQEmu::invslot::SHARED_BANK_BEGIN; slot_id <= EQEmu::invslot::SHARED_BANK_END; slot_id++) {
+		const EQEmu::ItemInstance* inst = m_inv[slot_id];
 		if (!inst)
 			continue;
 
 		inst->Serialize(ob, slot_id);
 
 		if (ob.tellp() == last_pos)
-			Log.Out(Logs::General, Logs::Inventory, "Serialization failed on item slot %d during BulkSendInventoryItems.  Item skipped.", slot_id);
+			Log(Logs::General, Logs::Inventory, "Serialization failed on item slot %d during BulkSendInventoryItems.  Item skipped.", slot_id);
 
 		last_pos = ob.tellp();
 	}
@@ -825,12 +864,12 @@ void Client::BulkSendInventoryItems()
 }
 
 void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
-	const EQEmu::ItemBase* handyitem = nullptr;
+	const EQEmu::ItemData* handyitem = nullptr;
 	uint32 numItemSlots = 80; //The max number of items passed in the transaction.
 	if (m_ClientVersionBit & EQEmu::versions::bit_RoFAndLater) { // RoF+ can send 200 items
 		numItemSlots = 200;
 	}
-	const EQEmu::ItemBase *item;
+	const EQEmu::ItemData *item = nullptr;
 	std::list<MerchantList> merlist = zone->merchanttable[merchant_id];
 	std::list<MerchantList>::const_iterator itr;
 	Mob* merch = entity_list.GetMobByNpcTypeID(npcid);
@@ -847,7 +886,7 @@ void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
 	uint8 handychance = 0;
 	for (itr = merlist.begin(); itr != merlist.end() && i <= numItemSlots; ++itr) {
 		MerchantList ml = *itr;
-		if (merch->CastToNPC()->GetMerchantProbability() > ml.probability)
+		if (ml.probability != 100 && zone->random.Int(1, 100) > ml.probability)
 			continue;
 
 		if (GetLevel() < ml.level_required)
@@ -857,7 +896,15 @@ void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
 			continue;
 
 		int32 fac = merch ? merch->GetPrimaryFaction() : 0;
-		if (fac != 0 && GetModCharacterFactionLevel(fac) < ml.faction_required)
+		int32 cur_fac_level;
+		if (fac == 0 || sneaking) {
+			cur_fac_level = 0;
+		}
+		else {
+			cur_fac_level = GetModCharacterFactionLevel(fac);
+		}
+			
+		if (cur_fac_level < ml.faction_required)
 			continue;
 
 		handychance = zone->random.Int(0, merlist.size() + tmp_merlist.size() - 1);
@@ -871,7 +918,7 @@ void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
 			int charges = 1;
 			if (item->IsClassCommon())
 				charges = item->MaxCharges;
-			ItemInst* inst = database.CreateItem(item, charges);
+			EQEmu::ItemInstance* inst = database.CreateItem(item, charges);
 			if (inst) {
 				if (RuleB(Merchant, UsePriceMod)) {
 					inst->SetPrice((item->Price * (RuleR(Merchant, SellCostMod)) * item->SellRate * Client::CalcPriceMod(merch, false)));
@@ -892,7 +939,7 @@ void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
 		// Account for merchant lists with gaps.
 		if (ml.slot >= i) {
 			if (ml.slot > i)
-				Log.Out(Logs::General, Logs::None, "(WARNING) Merchantlist contains gap at slot %d. Merchant: %d, NPC: %d", i, merchant_id, npcid);
+				Log(Logs::General, Logs::None, "(WARNING) Merchantlist contains gap at slot %d. Merchant: %d, NPC: %d", i, merchant_id, npcid);
 			i = ml.slot + 1;
 		}
 	}
@@ -912,7 +959,7 @@ void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
 			//	charges=ml.charges;
 			//else
 			charges = item->MaxCharges;
-			ItemInst* inst = database.CreateItem(item, charges);
+			EQEmu::ItemInstance* inst = database.CreateItem(item, charges);
 			if (inst) {
 				if (RuleB(Merchant, UsePriceMod)) {
 					inst->SetPrice((item->Price * (RuleR(Merchant, SellCostMod)) * item->SellRate * Client::CalcPriceMod(merch, false)));
@@ -960,8 +1007,6 @@ void Client::BulkSendMerchantInventory(int merchant_id, int npcid) {
 			Message_StringID(10, GENERIC_STRINGID_SAY, merch->GetCleanName(), handy_id, this->GetName(), handyitem->Name);
 		else
 			Message_StringID(10, GENERIC_STRINGID_SAY, merch->GetCleanName(), handy_id, this->GetName());
-
-		merch->CastToNPC()->FaceTarget(this->CastToMob());
 	}
 
 //		safe_delete_array(cpi);
@@ -984,7 +1029,7 @@ uint8 Client::WithCustomer(uint16 NewCustomer){
 	Client* c = entity_list.GetClientByID(CustomerID);
 
 	if(!c) {
-		Log.Out(Logs::Detail, Logs::Trading, "Previous customer has gone away.");
+		Log(Logs::Detail, Logs::Trading, "Previous customer has gone away.");
 		CustomerID = NewCustomer;
 		return 1;
 	}
@@ -996,7 +1041,7 @@ void Client::OPRezzAnswer(uint32 Action, uint32 SpellID, uint16 ZoneID, uint16 I
 {
 	if(PendingRezzXP < 0) {
 		// pendingrezexp is set to -1 if we are not expecting an OP_RezzAnswer
-		Log.Out(Logs::Detail, Logs::Spells, "Unexpected OP_RezzAnswer. Ignoring it.");
+		Log(Logs::Detail, Logs::Spells, "Unexpected OP_RezzAnswer. Ignoring it.");
 		Message(13, "You have already been resurrected.\n");
 		return;
 	}
@@ -1006,7 +1051,7 @@ void Client::OPRezzAnswer(uint32 Action, uint32 SpellID, uint16 ZoneID, uint16 I
 		// Mark the corpse as rezzed in the database, just in case the corpse has buried, or the zone the
 		// corpse is in has shutdown since the rez spell was cast.
 		database.MarkCorpseAsRezzed(PendingRezzDBID);
-		Log.Out(Logs::Detail, Logs::Spells, "Player %s got a %i Rezz, spellid %i in zone%i, instance id %i",
+		Log(Logs::Detail, Logs::Spells, "Player %s got a %i Rezz, spellid %i in zone%i, instance id %i",
 				this->name, (uint16)spells[SpellID].base[0],
 				SpellID, ZoneID, InstanceID);
 
@@ -1017,7 +1062,8 @@ void Client::OPRezzAnswer(uint32 Action, uint32 SpellID, uint16 ZoneID, uint16 I
 			SetMana(0);
 			SetHP(GetMaxHP()/5);
 			int rez_eff = 756;
-			if (GetRace() == BARBARIAN || GetRace() == DWARF || GetRace() == TROLL || GetRace() == OGRE)
+			if (RuleB(Character, UseOldRaceRezEffects) &&
+			    (GetRace() == BARBARIAN || GetRace() == DWARF || GetRace() == TROLL || GetRace() == OGRE))
 				rez_eff = 757;
 			SpellOnTarget(rez_eff, this); // Rezz effects
 		}
@@ -1059,7 +1105,7 @@ void Client::OPMemorizeSpell(const EQApplicationPacket* app)
 {
 	if(app->size != sizeof(MemorizeSpell_Struct))
 	{
-		Log.Out(Logs::General, Logs::Error, "Wrong size on OP_MemorizeSpell. Got: %i, Expected: %i", app->size, sizeof(MemorizeSpell_Struct));
+		Log(Logs::General, Logs::Error, "Wrong size on OP_MemorizeSpell. Got: %i, Expected: %i", app->size, sizeof(MemorizeSpell_Struct));
 		DumpPacket(app);
 		return;
 	}
@@ -1087,11 +1133,11 @@ void Client::OPMemorizeSpell(const EQApplicationPacket* app)
 	switch(memspell->scribing)
 	{
 		case memSpellScribing:	{	// scribing spell to book
-			const ItemInst* inst = m_inv[EQEmu::legacy::SlotCursor];
+			const EQEmu::ItemInstance* inst = m_inv[EQEmu::invslot::slotCursor];
 
 			if (inst && inst->IsClassCommon())
 			{
-				const EQEmu::ItemBase* item = inst->GetItem();
+				const EQEmu::ItemData* item = inst->GetItem();
 
 				if (RuleB(Character, RestrictSpellScribing) && !item->IsEquipable(GetRace(), GetClass())) {
 					Message_StringID(13, CANNOT_USE_ITEM);
@@ -1101,7 +1147,7 @@ void Client::OPMemorizeSpell(const EQApplicationPacket* app)
 				if(item && item->Scroll.Effect == (int32)(memspell->spell_id))
 				{
 					ScribeSpell(memspell->spell_id, memspell->slot);
-					DeleteItemInInventory(EQEmu::legacy::SlotCursor, 1, true);
+					DeleteItemInInventory(EQEmu::invslot::slotCursor, 1, true);
 				}
 				else
 					Message(0,"Scribing spell: inst exists but item does not or spell ids do not match.");
@@ -1186,6 +1232,12 @@ void Client::OPMoveCoin(const EQApplicationPacket* app)
 	int32 *from_bucket = 0, *to_bucket = 0;
 	Mob* trader = trade->With();
 
+	// if amount < 0, client is sending a malicious packet
+	if (mc->amount < 0)
+	{
+		return;
+	}
+	
 	// could just do a range, but this is clearer and explicit
 	if
 	(
@@ -1488,9 +1540,11 @@ void Client::OPGMTraining(const EQApplicationPacket *app)
 		return;
 
 	//you can only use your own trainer, client enforces this, but why trust it
-	int trains_class = pTrainer->GetClass() - (WARRIORGM - WARRIOR);
-	if(GetClass() != trains_class)
-		return;
+	if (!RuleB(Character, AllowCrossClassTrainers)) {
+		int trains_class = pTrainer->GetClass() - (WARRIORGM - WARRIOR);
+		if (GetClass() != trains_class)
+			return;
+	}
 
 	//you have to be somewhat close to a trainer to be properly using them
 	if(DistanceSquared(m_Position,pTrainer->GetPosition()) > USE_NPC_RANGE2)
@@ -1541,9 +1595,11 @@ void Client::OPGMEndTraining(const EQApplicationPacket *app)
 		return;
 
 	//you can only use your own trainer, client enforces this, but why trust it
-	int trains_class = pTrainer->GetClass() - (WARRIORGM - WARRIOR);
-	if(GetClass() != trains_class)
-		return;
+	if (!RuleB(Character, AllowCrossClassTrainers)) {
+		int trains_class = pTrainer->GetClass() - (WARRIORGM - WARRIOR);
+		if (GetClass() != trains_class)
+			return;
+	}
 
 	//you have to be somewhat close to a trainer to be properly using them
 	if(DistanceSquared(m_Position, pTrainer->GetPosition()) > USE_NPC_RANGE2)
@@ -1570,9 +1626,11 @@ void Client::OPGMTrainSkill(const EQApplicationPacket *app)
 		return;
 
 	//you can only use your own trainer, client enforces this, but why trust it
-	int trains_class = pTrainer->GetClass() - (WARRIORGM - WARRIOR);
-	if(GetClass() != trains_class)
-		return;
+	if (!RuleB(Character, AllowCrossClassTrainers)) {
+		int trains_class = pTrainer->GetClass() - (WARRIORGM - WARRIOR);
+		if (GetClass() != trains_class)
+			return;
+	}
 
 	//you have to be somewhat close to a trainer to be properly using them
 	if(DistanceSquared(m_Position, pTrainer->GetPosition()) > USE_NPC_RANGE2)
@@ -1606,12 +1664,12 @@ void Client::OPGMTrainSkill(const EQApplicationPacket *app)
 		EQEmu::skills::SkillType skill = (EQEmu::skills::SkillType)gmskill->skill_id;
 
 		if(!CanHaveSkill(skill)) {
-			Log.Out(Logs::Detail, Logs::Skills, "Tried to train skill %d, which is not allowed.", skill);
+			Log(Logs::Detail, Logs::Skills, "Tried to train skill %d, which is not allowed.", skill);
 			return;
 		}
 
 		if(MaxSkill(skill) == 0) {
-			Log.Out(Logs::Detail, Logs::Skills, "Tried to train skill %d, but training is not allowed at this level.", skill);
+			Log(Logs::Detail, Logs::Skills, "Tried to train skill %d, but training is not allowed at this level.", skill);
 			return;
 		}
 
@@ -1776,7 +1834,7 @@ void Client::OPGMSummon(const EQApplicationPacket *app)
 }
 
 void Client::DoHPRegen() {
-	SetHP(GetHP() + CalcHPRegen() + RestRegenHP);
+	SetHP(GetHP() + CalcHPRegen());
 	SendHPUpdate();
 }
 
@@ -1784,41 +1842,55 @@ void Client::DoManaRegen() {
 	if (GetMana() >= max_mana && spellbonuses.ManaRegen >= 0)
 		return;
 
-	SetMana(GetMana() + CalcManaRegen() + RestRegenMana);
-	SendManaUpdatePacket();
+	if (GetMana() < max_mana && (IsSitting() || CanMedOnHorse()) && HasSkill(EQEmu::skills::SkillMeditate))
+		CheckIncreaseSkill(EQEmu::skills::SkillMeditate, nullptr, -5);
+
+	SetMana(GetMana() + CalcManaRegen());
+	CheckManaEndUpdate();
 }
 
-
-void Client::DoStaminaUpdate() {
-	if(!stamina_timer.Check())
-		return;
-
+void Client::DoStaminaHungerUpdate()
+{
 	auto outapp = new EQApplicationPacket(OP_Stamina, sizeof(Stamina_Struct));
-	Stamina_Struct* sta = (Stamina_Struct*)outapp->pBuffer;
+	Stamina_Struct *sta = (Stamina_Struct *)outapp->pBuffer;
 
-	if(zone->GetZoneID() != 151) {
+	Log(Logs::General, Logs::Food, "Client::DoStaminaHungerUpdate() hunger_level: %i thirst_level: %i before loss",
+	    m_pp.hunger_level, m_pp.thirst_level);
+
+	if (zone->GetZoneID() != 151 && !GetGM()) {
 		int loss = RuleI(Character, FoodLossPerUpdate);
-		if (m_pp.hunger_level > 0)
-			m_pp.hunger_level-=loss;
-		if (m_pp.thirst_level > 0)
-			m_pp.thirst_level-=loss;
-		sta->food = m_pp.hunger_level > 6000 ? 6000 : m_pp.hunger_level;
-		sta->water = m_pp.thirst_level> 6000 ? 6000 : m_pp.thirst_level;
-	}
-	else {
+		if (GetHorseId() != 0)
+			loss *= 3;
+
+		m_pp.hunger_level = EQEmu::Clamp(m_pp.hunger_level - loss, 0, 6000);
+		m_pp.thirst_level = EQEmu::Clamp(m_pp.thirst_level - loss, 0, 6000);
+		if (spellbonuses.hunger) {
+			m_pp.hunger_level = EQEmu::ClampLower(m_pp.hunger_level, 3500);
+			m_pp.thirst_level = EQEmu::ClampLower(m_pp.thirst_level, 3500);
+		}
+		sta->food = m_pp.hunger_level;
+		sta->water = m_pp.thirst_level;
+	} else {
 		// No auto food/drink consumption in the Bazaar
 		sta->food = 6000;
 		sta->water = 6000;
 	}
+
+	Log(Logs::General, Logs::Food,
+	    "Client::DoStaminaHungerUpdate() Current hunger_level: %i = (%i minutes left) thirst_level: %i = (%i "
+	    "minutes left) - after loss",
+	    m_pp.hunger_level, m_pp.hunger_level, m_pp.thirst_level, m_pp.thirst_level);
+
 	FastQueuePacket(&outapp);
 }
 
 void Client::DoEnduranceRegen()
 {
-	if(GetEndurance() >= GetMaxEndurance())
-		return;
+	// endurance has some negative mods that could result in a negative regen when starved
+	int regen = CalcEnduranceRegen();
 
-	SetEndurance(GetEndurance() + CalcEnduranceRegen() + RestRegenEndurance);
+	if (regen < 0 || (regen > 0 && GetEndurance() < GetMaxEndurance()))
+		SetEndurance(GetEndurance() + regen);
 }
 
 void Client::DoEnduranceUpkeep() {
@@ -1861,22 +1933,24 @@ void Client::DoEnduranceUpkeep() {
 		SetEndurUpkeep(false);
 }
 
-void Client::CalcRestState() {
-
+void Client::CalcRestState()
+{
 	// This method calculates rest state HP and mana regeneration.
 	// The client must have been out of combat for RuleI(Character, RestRegenTimeToActivate) seconds,
 	// must be sitting down, and must not have any detrimental spells affecting them.
-	//
-	if(!RuleI(Character, RestRegenPercent))
+	if(!RuleB(Character, RestRegenEnabled))
 		return;
 
-	RestRegenHP = RestRegenMana = RestRegenEndurance = 0;
+	ooc_regen = false;
 
-	if(AggroCount || !IsSitting())
+	if(AggroCount || !(IsSitting() || CanMedOnHorse()))
 		return;
 
 	if(!rest_timer.Check(false))
 		return;
+
+	// so we don't have aggro, our timer has expired, we do not want this to cause issues
+	m_pp.RestTimer = 0;
 
 	uint32 buff_count = GetMaxTotalSlots();
 	for (unsigned int j = 0; j < buff_count; j++) {
@@ -1887,67 +1961,45 @@ void Client::CalcRestState() {
 		}
 	}
 
-	RestRegenHP = (GetMaxHP() * RuleI(Character, RestRegenPercent) / 100);
-
-	RestRegenMana = (GetMaxMana() * RuleI(Character, RestRegenPercent) / 100);
-
-	if(RuleB(Character, RestRegenEndurance))
-		RestRegenEndurance = (GetMaxEndurance() * RuleI(Character, RestRegenPercent) / 100);
+	ooc_regen = true;
 }
 
 void Client::DoTracking()
 {
-	if(TrackingID == 0)
+	if (TrackingID == 0)
 		return;
 
 	Mob *m = entity_list.GetMob(TrackingID);
 
-	if(!m || m->IsCorpse())
-	{
+	if (!m || m->IsCorpse()) {
 		Message_StringID(MT_Skills, TRACK_LOST_TARGET);
-
 		TrackingID = 0;
-
 		return;
 	}
 
 	float RelativeHeading = GetHeading() - CalculateHeadingToTarget(m->GetX(), m->GetY());
 
-	if(RelativeHeading < 0)
-		RelativeHeading += 256;
+	if (RelativeHeading < 0)
+		RelativeHeading += 512;
 
-	if((RelativeHeading <= 16) || (RelativeHeading >= 240))
-	{
+	if (RelativeHeading > 480)
 		Message_StringID(MT_Skills, TRACK_STRAIGHT_AHEAD, m->GetCleanName());
-	}
-	else if((RelativeHeading > 16) && (RelativeHeading <= 48))
-	{
-		Message_StringID(MT_Skills, TRACK_AHEAD_AND_TO, m->GetCleanName(), "right");
-	}
-	else if((RelativeHeading > 48) && (RelativeHeading <= 80))
-	{
-		Message_StringID(MT_Skills, TRACK_TO_THE, m->GetCleanName(), "right");
-	}
-	else if((RelativeHeading > 80) && (RelativeHeading <= 112))
-	{
-		Message_StringID(MT_Skills, TRACK_BEHIND_AND_TO, m->GetCleanName(), "right");
-	}
-	else if((RelativeHeading > 112) && (RelativeHeading <= 144))
-	{
-		Message_StringID(MT_Skills, TRACK_BEHIND_YOU, m->GetCleanName());
-	}
-	else if((RelativeHeading > 144) && (RelativeHeading <= 176))
-	{
-		Message_StringID(MT_Skills, TRACK_BEHIND_AND_TO, m->GetCleanName(), "left");
-	}
-	else if((RelativeHeading > 176) && (RelativeHeading <= 208))
-	{
-		Message_StringID(MT_Skills, TRACK_TO_THE, m->GetCleanName(), "left");
-	}
-	else if((RelativeHeading > 208) && (RelativeHeading < 240))
-	{
+	else if (RelativeHeading > 416)
 		Message_StringID(MT_Skills, TRACK_AHEAD_AND_TO, m->GetCleanName(), "left");
-	}
+	else if (RelativeHeading > 352)
+		Message_StringID(MT_Skills, TRACK_TO_THE, m->GetCleanName(), "left");
+	else if (RelativeHeading > 288)
+		Message_StringID(MT_Skills, TRACK_BEHIND_AND_TO, m->GetCleanName(), "left");
+	else if (RelativeHeading > 224)
+		Message_StringID(MT_Skills, TRACK_BEHIND_YOU, m->GetCleanName());
+	else if (RelativeHeading > 160)
+		Message_StringID(MT_Skills, TRACK_BEHIND_AND_TO, m->GetCleanName(), "right");
+	else if (RelativeHeading > 96)
+		Message_StringID(MT_Skills, TRACK_TO_THE, m->GetCleanName(), "right");
+	else if (RelativeHeading > 32)
+		Message_StringID(MT_Skills, TRACK_AHEAD_AND_TO, m->GetCleanName(), "right");
+	else if (RelativeHeading >= 0)
+		Message_StringID(MT_Skills, TRACK_STRAIGHT_AHEAD, m->GetCleanName());
 }
 
 void Client::HandleRespawnFromHover(uint32 Option)
@@ -2005,7 +2057,7 @@ void Client::HandleRespawnFromHover(uint32 Option)
 		{
 			if (PendingRezzXP < 0 || PendingRezzSpellID == 0)
 			{
-				Log.Out(Logs::Detail, Logs::Spells, "Unexpected Rezz from hover request.");
+				Log(Logs::Detail, Logs::Spells, "Unexpected Rezz from hover request.");
 				return;
 			}
 			SetHP(GetMaxHP() / 5);
@@ -2039,10 +2091,10 @@ void Client::HandleRespawnFromHover(uint32 Option)
 
 			if (corpse && corpse->IsCorpse())
 			{
-				Log.Out(Logs::Detail, Logs::Spells, "Hover Rez in zone %s for corpse %s",
+				Log(Logs::Detail, Logs::Spells, "Hover Rez in zone %s for corpse %s",
 						zone->GetShortName(), PendingRezzCorpseName.c_str());
 
-				Log.Out(Logs::Detail, Logs::Spells, "Found corpse. Marking corpse as rezzed.");
+				Log(Logs::Detail, Logs::Spells, "Found corpse. Marking corpse as rezzed.");
 
 				corpse->IsRezzed(true);
 				corpse->CompleteResurrection();

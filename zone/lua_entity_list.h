@@ -80,6 +80,7 @@ public:
 	void Message(uint32 guild_dbid, uint32 type, const char *message);
 	void MessageStatus(uint32 guild_dbid, int min_status, uint32 type, const char *message);
 	void MessageClose(Lua_Mob sender, bool skip_sender, float dist, uint32 type, const char *message);
+	void FilteredMessageClose(Lua_Mob sender, bool skip_sender, float dist, uint32 type, int filter, const char *message);
 	void RemoveFromTargets(Lua_Mob mob);
 	void RemoveFromTargets(Lua_Mob mob, bool RemoveFromXTargets);
 	void ReplaceWithTarget(Lua_Mob target, Lua_Mob new_target);
@@ -100,6 +101,7 @@ public:
 	Lua_Client GetRandomClient(float x, float y, float z, float dist, Lua_Client exclude);
 	Lua_Mob_List GetMobList();
 	Lua_Client_List GetClientList();
+	Lua_Client_List GetShuffledClientList();
 	Lua_NPC_List GetNPCList();
 	Lua_Corpse_List GetCorpseList();
 	Lua_Object_List GetObjectList();

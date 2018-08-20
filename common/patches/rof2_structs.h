@@ -131,6 +131,7 @@ static const uint32 MAX_PP_LANGUAGE		= 32;	// was 25
 static const uint32 MAX_PP_SPELLBOOK	= 720;	// was 480
 static const uint32 MAX_PP_MEMSPELL		= 16;	// was 12
 static const uint32 MAX_PP_SKILL		= PACKET_SKILL_ARRAY_SIZE;	// 100 - actual skills buffer size
+static const uint32 MAX_PP_INNATE_SKILL	= 25;
 static const uint32 MAX_PP_AA_ARRAY		= 300;
 static const uint32 MAX_PP_DISCIPLINES	= 300;	// was 200
 static const uint32 MAX_GROUP_MEMBERS	= 6;
@@ -190,7 +191,7 @@ struct TintProfile
 			Tint_Struct Primary;
 			Tint_Struct Secondary;
 		};
-		Tint_Struct Slot[EQEmu::textures::TextureCount];
+		Tint_Struct Slot[EQEmu::textures::materialCount];
 	};
 };
 
@@ -328,38 +329,43 @@ showeq -> eqemu
 sed -e 's/_t//g' -e 's/seto_0xFF/set_to_0xFF/g'
 */
 
+// I think this is actually 5 bytes
+// IDA's pseudocode reads this as 5 bytes pulled into 2 DWORDs
 struct Spawn_Struct_Bitfields
 {
+	// byte 1
 /*00*/	unsigned   gender:2;		// Gender (0=male, 1=female, 2=monster)
 /*02*/	unsigned   ispet:1;			// Guessed based on observing live spawns
 /*03*/	unsigned   afk:1;			// 0=no, 1=afk
 /*04*/	unsigned   anon:2;			// 0=normal, 1=anon, 2=roleplay
 /*06*/	unsigned   gm:1;
-/*06*/	unsigned   sneak:1;
+/*07*/	unsigned   sneak:1;
+	// byte 2
 /*08*/	unsigned   lfg:1;
-/*09*/	unsigned   unknown09:1;
-/*10*/	unsigned   invis:1;			// May have invis & sneak the wrong way around ... not sure how to tell which is which
-/*11*/	unsigned   invis1:1;		// GM Invis?  Can only be seen with #gm on - same for the below
-/*12*/	unsigned   invis2:1;		// This one also make the NPC/PC invis
-/*13*/	unsigned   invis3:1;		// This one also make the NPC/PC invis
-/*14*/	unsigned   invis4:1;		// This one also make the NPC/PC invis
-/*15*/	unsigned   invis6:1;		// This one also make the NPC/PC invis
-/*16*/	unsigned   invis7:1;		// This one also make the NPC/PC invis
-/*17*/	unsigned   invis8:1;		// This one also make the NPC/PC invis
-/*18*/	unsigned   invis9:1;		// This one also make the NPC/PC invis
-/*19*/	unsigned   invis10:1;		// This one also make the NPC/PC invis
-/*20*/	unsigned   invis11:1;		// This one also make the NPC/PC invis
-/*21*/	unsigned   invis12:1;		// This one also make the NPC/PC invis
+/*09*/	unsigned   betabuffed:1;
+/*10*/	unsigned   invis:12;		// there are 3000 different (non-GM) invis levels
 /*22*/	unsigned   linkdead:1;		// 1 Toggles LD on or off after name. Correct for RoF2
 /*23*/	unsigned   showhelm:1;
+	// byte 4
 /*24*/	unsigned   unknown24:1;		// Prefixes name with !
 /*25*/	unsigned   trader:1;
-/*26*/	unsigned   unknown26:1;
+/*26*/	unsigned   animationonpop:1;
 /*27*/	unsigned   targetable:1;
 /*28*/	unsigned   targetable_with_hotkey:1;
 /*29*/	unsigned   showname:1;
-/*30*/	unsigned   unknown30:1;
-/*30*/	unsigned   untargetable:1;	// Untargetable with mouse
+/*30*/	unsigned   idleanimationsoff:1; // what we called statue?
+/*31*/	unsigned   untargetable:1;	// bClickThrough
+/* do these later
+32	unsigned   buyer:1;
+33	unsigned   offline:1;
+34	unsigned   interactiveobject:1;
+35	unsigned   flung:1; // hmm this vfunc appears to do stuff with leve and flung variables
+36	unsigned   title:1;
+37	unsigned   suffix:1;
+38	unsigned   padding1:1;
+39	unsigned   padding2:1;
+40	unsinged   padding3:1;
+*/
 	/*
 	// Unknown in RoF2
 	unsigned   betabuffed:1;
@@ -394,7 +400,7 @@ struct Spawn_Struct_Position
 
 struct Spawn_Struct_Position
 {
-	signed	padding0000:12;
+	signed	angle:12;       // pitch of camera?
 	signed	y:19;
 	signed	padding0001:1;
 
@@ -410,7 +416,7 @@ struct Spawn_Struct_Position
 	signed	z:19;
 	signed	padding0020:3;
 
-	signed  animation:10;   // animation
+	signed  animation:10;   // SpeedRun
 	signed	deltaY:13;
 	signed	padding0023:9;
 };
@@ -424,7 +430,7 @@ struct Spawn_Struct
 /*0000*/ //uint8     nullterm1; // hack to null terminate name
 /*0064*/ uint32 spawnId;
 /*0068*/ uint8  level;
-/*0069*/ float    unknown1;
+/*0069*/ float  bounding_radius; // used in melee, overrides calc
 /*0073*/ uint8  NPC;           // 0=player,1=npc,2=pc corpse,3=npc corpse
 	 Spawn_Struct_Bitfields	Bitfields;
 /*0000*/ uint8  otherData; // & 4 - has title, & 8 - has suffix, & 1 - it's a chest or untargetable
@@ -498,7 +504,7 @@ struct Spawn_Struct
 
 /*0000*/ //char title[0];  // only read if(hasTitleOrSuffix & 4)
 /*0000*/ //char suffix[0]; // only read if(hasTitleOrSuffix & 8)
-	 char unknown20[8];
+	 char unknown20[8]; // 2 ints, first unknown, 2nd SplineID
 	 uint8 IsMercenary;	// If NPC == 1 and this == 1, then the NPC name is Orange.
 /*0000*/ char unknown21[55];
 };
@@ -556,74 +562,100 @@ struct ServerZoneEntry_Struct //Adjusted from SEQ Everquest.h Struct
 //New Zone Struct - Size: 948
 struct NewZone_Struct {
 	/*0000*/	char	char_name[64];			// Character Name
-	/*0064*/	char	zone_short_name[32];	// Zone Short Name
-	/*0096*/	char    unknown0096[96];
-	/*0192*/	char	zone_long_name[278];	// Zone Long Name
-	/*0470*/	uint8	ztype;					// Zone type (usually FF)
-	/*0471*/	uint8	fog_red[4];				// Zone fog (red)
-	/*0475*/	uint8	fog_green[4];				// Zone fog (green)
-	/*0479*/	uint8	fog_blue[4];				// Zone fog (blue)
-	/*0483*/	uint8	unknown323;
-	/*0484*/	float	fog_minclip[4];
+	/*0064*/	char	zone_short_name[128];	// Zone Short Name
+	/*0192*/	char	zone_long_name[128];	// Zone Long Name
+	/*0320*/	char	zone_desc[5][30];		// mostly just empty strings
+	/*0470*/	uint8	ztype;					// Zone type (usually FF) FogOnOff
+	/*0471*/	uint8	fog_red[4];				// Zone fog (red) ARGBCOLOR
+	/*0475*/	uint8	fog_green[4];			// Zone fog (green) ARGBCOLOR
+	/*0479*/	uint8	fog_blue[4];			// Zone fog (blue) ARGBCOLO
+	/*0483*/	uint8	unknown323;				// padding?
+	/*0484*/	float	fog_minclip[4];			// MQ2 has this starting at this offset, must be padding above
 	/*0500*/	float	fog_maxclip[4];
 	/*0516*/	float	gravity;
-	/*0520*/	uint8	time_type;
+	/*0520*/	uint8	time_type;				// OutDoor flag 0 = IndoorDungeon, 1 = OUtdoor, 2 = OutdoorCity, 3 = DungeonCity, 4 = IndoorCity, 5 = OutdoorDungeon
 	/*0521*/    uint8   rain_chance[4];
 	/*0525*/    uint8   rain_duration[4];
 	/*0529*/    uint8   snow_chance[4];
 	/*0533*/    uint8   snow_duration[4];
-	/*0537*/    uint8   unknown537[32];			// Seen all 0xff
-	/*0569*/	uint8	unknown569;				// Unknown - Seen 0
+	/*0537*/    uint8   unknown537[32];			// this is removed on live, specialdates and specialcodes probably macro'd out
+	/*0569*/	uint8	ZoneTimeZone;			// MQ2 "in hours from worldserver, can be negative"
 	/*0570*/	uint8	sky;					// Sky Type
-	/*0571*/	uint8	unknown571;				// Unknown - Seen 0
-	/*0572*/	uint32	unknown572;				// Unknown - Seen 4 in Guild Lobby
-	/*0576*/	uint32	unknown576;				// Unknown - Seen 2 in Guild Lobby
-	/*0580*/	uint32	unknown580;				// Unknown - Seen 0 in Guild Lobby
+	/*0571*/	uint8	unknown571;				// Padding I think
+	/*0572*/	uint32	WaterMidi;				// Unknown - Seen 4 in Guild Lobby
+	/*0576*/	uint32	DayMidi;				// Unknown - Seen 2 in Guild Lobby
+	/*0580*/	uint32	NightMidi;				// Unknown - Seen 0 in Guild Lobby
 	/*0584*/	float	zone_exp_multiplier;	// Experience Multiplier
 	/*0588*/	float	safe_y;					// Zone Safe Y
 	/*0592*/	float	safe_x;					// Zone Safe X
 	/*0596*/	float	safe_z;					// Zone Safe Z
-	/*0600*/	float	min_z;					// Guessed - NEW - Seen 0
-	/*0604*/	float	max_z;					// Guessed
-	/*0608*/	float	underworld;				// Underworld, min z (Not Sure?)
+	/*0600*/	float	min_z;					// This isn't safe heading like live -- could be default heading rather than succor heading
+	/*0604*/	float	max_z;					// Ceiling
+	/*0608*/	float	underworld;				// Underworld, min z (Not Sure?) Floor
 	/*0612*/	float	minclip;				// Minimum View Distance
 	/*0616*/	float	maxclip;				// Maximum View DIstance
-	/*0620*/	uint8	unknown620[84];		// ***Placeholder
-	/*0704*/	char	zone_short_name2[96];	//zone file name? excludes instance number which can be in previous version.
-	/*0800*/	int32	unknown800;	//seen -1
-	/*0804*/	char	unknown804[40]; //
-	/*0844*/	int32	unknown844;	//seen 600
-	/*0848*/	int32	unknown848; //seen 2008
-	/*0852*/	uint16	zone_id;
+	/*0620*/	uint32	ForageLow;				// Forage loot table ID?
+	/*0624*/	uint32	ForageMedium;			// Forage loot table ID?
+	/*0628*/	uint32	ForageHigh;				// Forage loot table ID?
+	/*0632*/	uint32	FishingLow;				// Fishing loot table ID?
+	/*0636*/	uint32	FishingMedium;			// Fishing loot table ID?
+	/*0640*/	uint32	FishingHigh;			// Fishing loot table ID?
+	/*0644*/	uint32	sky_lock;				// MQ2 skyrelated
+	/*0648*/	uint32	graveyard_timer;		// minutes until corpse pop to graveyard
+	/*0652*/	uint32	scriptIDHour;			// These are IDs of scripts
+	/*0656*/	uint32	scriptIDMinute;			// These are IDs of scripts
+	/*0660*/	uint32	scriptIDTick;			// These are IDs of scripts
+	/*0664*/	uint32	scriptIDOnPlayerDeath;	// These are IDs of scripts
+	/*0668*/	uint32	scriptIDOnNPCDeath;		// These are IDs of scripts
+	/*0672*/	uint32	scriptIDPlayerEnteringZone;	// These are IDs of scripts
+	/*0676*/	uint32	scriptIDOnZonePop;		// These are IDs of scripts
+	/*0680*/	uint32	scriptIDNPCLoot;		// These are IDs of scripts
+	/*0684*/	uint32	scriptIDAdventureFailed;	// These are IDs of scripts
+	/*0688*/	uint32	CanExploreTasks;
+	/*0692*/	uint32	UnknownFlag;			// not sure, neither is MQ2!
+	/*0696*/	uint32	scriptIDOnFishing;		// THese are IDs of scripts
+	/*0700*/	uint32	scriptIDOnForage;		// THese are IDs of scripts
+	/*0704*/	char	zone_short_name2[32];	//zone file name? excludes instance number which can be in previous version.
+	/*0736*/	char	WeatherString[32];
+	/*0768*/	char	SkyString2[32];
+	/*0800*/	int32	SkyRelated2;			//seen -1 -- maybe some default sky time?
+	/*0804*/	char	WeatherString2[32];		//
+	/*0836*/	float	WeatherChangeTime;		// not sure :P
+	/*0840*/	uint32	Climate;
+	/*0844*/	int32	NPCAggroMaxDist;		//seen 600
+	/*0848*/	int32	FilterID;				//seen 2008 -- maybe zone guide related?
+	/*0852*/	uint16	zone_id;				// this might just be instance ID got 1736 for time
 	/*0854*/	uint16	zone_instance;
-	/*0856*/	char	unknown856[20];
-	/*0876*/	uint32	SuspendBuffs;
-	/*0880*/	uint32	unknown880;		// Seen 50
-	/*0884*/	uint32	unknown884;		// Seen 10
-	/*0888*/	uint8	unknown888;		// Seen 1
-	/*0889*/	uint8	unknown889;		// Seen 0 (POK) or 1 (rujj)
-	/*0890*/	uint8	unknown890;		// Seen 1
-	/*0891*/	uint8	unknown891;		// Seen 0
-	/*0892*/	uint8	unknown892;		// Seen 0
-	/*0893*/	uint8	unknown893;		// Seen 0 - 00
-	/*0894*/	uint8	fall_damage;	// 0 = Fall Damage on, 1 = Fall Damage off
-	/*0895*/	uint8	unknown895;		// Seen 0 - 00
-	/*0896*/	uint32	unknown896;		// Seen 180
-	/*0900*/	uint32	unknown900;		// Seen 180
-	/*0904*/	uint32	unknown904;		// Seen 180
-	/*0908*/	uint32	unknown908;		// Seen 2
-	/*0912*/	uint32	unknown912;		// Seen 2
-	/*0916*/	float	FogDensity;		// Most zones have this set to 0.33 Blightfire had 0.16
-	/*0920*/	uint32	unknown920;		// Seen 0
-	/*0924*/	uint32	unknown924;		// Seen 0
-	/*0928*/	uint32	unknown928;		// Seen 0
-	/*0932*/	int32  unknown932;		// Seen -1
-	/*0936*/	int32  unknown936;		// Seen -1
-	/*0940*/	uint32  unknown940;		// Seen 0
-	/*0944*/	float   unknown944;		// Seen 1.0 in PoK, and 0.25 in Guild Lobby
-	/*0948*/	uint32  unknown948;		// Seen 0 - New on Live as of Dec 15 2014
-	/*0952*/	uint32  unknown952;		// Seen 100 - New on Live as of Dec 15 2014
-	/*0956*/
+	/*0856*/	uint32	scriptNPCReceivedanItem;
+	/*0860*/	uint32	bCheck;					// padded bool
+	/*0864*/	uint32	scriptIDSomething;
+	/*0868*/	uint32	scriptIDSomething2;
+	/*0872*/	uint32	scriptIDSomething3;
+	/*0876*/	uint32	SuspendBuffs;			// padded bool
+	/*0880*/	uint32	LavaDamage;				// LavaDamage value
+	/*0884*/	uint32	MinLavaDamage;			// min cap after resist calcs
+	/*0888*/	uint8	bDisallowManaStone;		// can't use manastone in this zone
+	/*0889*/	uint8	bNoBind;				// can't bind even if outdoor says we can!
+	/*0890*/	uint8	bNoAttack;				// non-attack zone
+	/*0891*/	uint8	bNoCallOfHero;			// coth line disabled
+	/*0892*/	uint8	bNoFlux;				// gflux no worky
+	/*0893*/	uint8	bNoFear;				// fear spells no worky
+	/*0894*/	uint8	fall_damage;			// 0 = Fall Damage on, 1 = Fall Damage off MQ2 calls bNoEncumber
+	/*0895*/	uint8	unknown895;				// padding
+	/*0896*/	uint32	FastRegenHP;			// percentage I think?
+	/*0900*/	uint32	FastRegenMana;			// percentage I think?
+	/*0904*/	uint32	FastRegenEndurance;		// percentage I think?
+	/*0908*/	uint32	CanPlaceCampsite;		// 0 = no, 1 = can place, 2 = place and goto
+	/*0912*/	uint32	CanPlaceGuildBanner;	// ^
+	/*0916*/	float	FogDensity;				// Most zones have this set to 0.33 Blightfire had 0.16
+	/*0920*/	uint32	bAdjustGamma;			// padded bool
+	/*0924*/	uint32	TimeStringID;			// Seen 0
+	/*0928*/	uint32	bNoMercenaries;			// padded bool
+	/*0932*/	int32	FishingRelated;			// Seen -1 idk
+	/*0936*/	int32	ForageRelated;			// Seen -1 idk
+	/*0940*/	uint32	bNoLevitate;			// padded bool
+	/*0944*/	float	Blooming;				// Seen 1.0 in PoK, and 0.25 in Guild Lobby
+	/*0948*/
 };
 
 /*
@@ -925,13 +957,13 @@ struct BandolierItem_Struct_Old
 struct Bandolier_Struct
 {
 	char Name[1];	// Variable Length
-	BandolierItem_Struct Items[profile::BandolierItemCount];
+	BandolierItem_Struct Items[profile::BANDOLIER_ITEM_COUNT];
 };
 
 struct Bandolier_Struct_Old
 {
 	char Name[32];
-	BandolierItem_Struct Items[profile::BandolierItemCount];
+	BandolierItem_Struct Items[profile::BANDOLIER_ITEM_COUNT];
 };
 
 struct PotionBeltItem_Struct
@@ -951,12 +983,12 @@ struct PotionBeltItem_Struct_Old
 
 struct PotionBelt_Struct
 {
-	PotionBeltItem_Struct Items[profile::PotionBeltSize];
+	PotionBeltItem_Struct Items[profile::POTION_BELT_SIZE];
 };
 
 struct PotionBelt_Struct_Old
 {
-	PotionBeltItem_Struct_Old Items[profile::PotionBeltSize];
+	PotionBeltItem_Struct_Old Items[profile::POTION_BELT_SIZE];
 };
 
 struct GroupLeadershipAA_Struct {
@@ -1082,7 +1114,7 @@ union
 	/*00184*/ Texture_Struct equipment[22];		// Total Slots
 };
 /*00624*/ uint32 equip2_count;			// Seen 9
-/*00628*/ Texture_Struct equipment2[EQEmu::textures::TextureCount];	// Appears to be Visible slots, but all 0s
+/*00628*/ Texture_Struct equipment2[EQEmu::textures::materialCount];	// Appears to be Visible slots, but all 0s
 /*00808*/ uint32 tint_count;			// Seen 9
 /*00812*/ TintProfile item_tint;		// RR GG BB 00
 /*00848*/ uint32 tint_count2;			// Seen 9
@@ -1124,8 +1156,8 @@ union
 /*01012*/ AA_Array  aa_array[MAX_PP_AA_ARRAY];	// [300] 3600 bytes - AAs 12 bytes each
 /*04612*/ uint32 skill_count;					// Seen 100
 /*04616*/ uint32 skills[MAX_PP_SKILL];			// [100] 400 bytes - List of skills
-/*05016*/ uint32 unknown15_count;				// Seen 25
-/*05020*/ uint32 unknown_rof15[25];				// Most are 255 or 0
+/*05016*/ uint32 InnateSkills_count;			// Seen 25
+/*05020*/ uint32 InnateSkills[MAX_PP_INNATE_SKILL];	// Most are 255 or 0
 /*05120*/ uint32 discipline_count;				// Seen 200
 /*05124*/ Disciplines_Struct  disciplines;		// [200] 800 bytes Known disciplines
 /*05924*/ uint32 timestamp_count;				// Seen 20
@@ -1166,7 +1198,7 @@ union
 /*12949*/ uint32 aapoints;				// Unspent AA points - Seen 1
 /*12953*/ uint16 unknown_rof20;			//
 /*12955*/ uint32 bandolier_count;		// Seen 20
-/*12959*/ Bandolier_Struct bandoliers[profile::BandoliersSize]; // [20] 740 bytes (Variable Name Sizes) - bandolier contents
+/*12959*/ Bandolier_Struct bandoliers[profile::BANDOLIERS_SIZE]; // [20] 740 bytes (Variable Name Sizes) - bandolier contents
 /*13699*/ uint32 potionbelt_count;		// Seen 5
 /*13703*/ PotionBelt_Struct potionbelt;	// [5] 45 bytes potion belt - (Variable Name Sizes)
 /*13748*/ int32 unknown_rof21;			// Seen -1
@@ -1430,17 +1462,17 @@ struct Action_Struct
 {
 /*00*/	uint16 target;			// id of target
 /*02*/	uint16 source;			// id of caster
-/*04*/	uint16 level;			// level of caster - Seen 0
-/*06*/  uint32 unknown06;
+/*04*/	uint16 level;			// level of caster for spells, OSX dump says attack rating, guess spells use it for level
+/*06*/  uint32 unknown06;		// OSX dump says base_damage, was used for bard mod too, this is 0'd :(
 /*10*/	float instrument_mod;
-/*14*/  uint32 bard_focus_id;      // seen 0
-/*18*/  float knockback_angle;  //seems to go from 0-512 then it rolls over again
-/*22*/  uint32 unknown22;
-/*26*/  uint8 type;
-/*27*/  uint32 damage;
-/*31*/  uint16 unknown31;
+/*14*/  float force;
+/*18*/  float hit_heading;
+/*22*/  float hit_pitch;
+/*26*/  uint8 type;				// 231 (0xE7) for spells, skill
+/*27*/  uint32 damage;			// OSX says min_damage
+/*31*/  uint16 unknown31;		// OSX says tohit
 /*33*/	uint32 spell;			// spell id being cast
-/*37*/	uint8 level2;			// level of caster again? Or maybe the castee
+/*37*/	uint8 spell_level;			// level of caster again? Or maybe the castee
 /*38*/	uint8 effect_flag;		// if this is 4, the effect is valid: or if two are sent at the same time?
 /*39*/
 };
@@ -1452,25 +1484,21 @@ struct ActionAlt_Struct
 {
 /*00*/	uint16 target;			// id of target
 /*02*/	uint16 source;			// id of caster
-/*04*/	uint16 level;			// level of caster - Seen 0
-/*06*/  uint32 unknown06;
+/*04*/	uint16 level;			// level of caster for spells, OSX dump says attack rating, guess spells use it for level
+/*06*/  uint32 unknown06;		// OSX dump says base_damage, was used for bard mod too, this is 0'd :(
 /*10*/	float instrument_mod;
-/*14*/  uint32 bard_focus_id;      // seen 0
-/*18*/  float knockback_angle;  //seems to go from 0-512 then it rolls over again
-/*22*/  uint32 unknown22;
-/*26*/  uint8 type;
-/*27*/  uint32 damage;
-/*31*/  uint16 unknown31;
+/*14*/  float force;
+/*18*/  float hit_heading;
+/*22*/  float hit_pitch;
+/*26*/  uint8 type;				// 231 (0xE7) for spells, skill
+/*27*/  uint32 damage;			// OSX says min_damage
+/*31*/  uint16 unknown31;		// OSX says tohit
 /*33*/	uint32 spell;			// spell id being cast
-/*37*/	uint8 level2;			// level of caster again? Or maybe the castee
+/*37*/	uint8 spell_level;		// level of caster again? Or maybe the castee
 /*38*/	uint8 effect_flag;		// if this is 4, the effect is valid: or if two are sent at the same time?
-/*39*/	uint32 unknown39;		// New field to Underfoot - Seen 14
-/*43*/	uint8 unknown43;			// New field to Underfoot - Seen 0
-/*44*/	uint8 unknown44;			// New field to Underfoot - Seen 17
-/*45*/	uint8 unknown45;			// New field to Underfoot - Seen 0
-/*46*/	int32 unknown46;		// New field to Underfoot - Seen -1
-/*50*/	uint32 unknown50;		// New field to Underfoot - Seen 0
-/*54*/	uint16 unknown54;		// New field to Underfoot - Seen 0
+/*39*/	uint8 spell_gem;
+/*40*/	InventorySlot_Struct slot;
+/*52*/	uint32 item_cast_type;	// ItemSpellTypes enum from MQ2
 /*56*/
 };
 
@@ -1485,9 +1513,9 @@ struct CombatDamage_Struct
 /* 05 */	uint32	spellid;
 /* 09 */	int32	damage;
 /* 13 */	float	force;		// cd cc cc 3d
-/* 17 */	float	meleepush_xy;		// see above notes in Action_Struct
-/* 21 */	float	meleepush_z;
-/* 25 */	uint8	unknown25;	// was [9]
+/* 17 */	float	hit_heading;		// see above notes in Action_Struct
+/* 21 */	float	hit_pitch;
+/* 25 */	uint8	secondary;	// 0 for primary hand, 1 for secondary
 /* 26 */	uint32	special; // 2 = Rampage, 1 = Wild Rampage
 /* 30 */
 };
@@ -1795,6 +1823,20 @@ struct MoveItem_Struct
 /*0028*/
 };
 
+struct MultiMoveItemSub_Struct
+{
+/*0000*/ InventorySlot_Struct	from_slot;
+/*0012*/ InventorySlot_Struct	to_slot;
+/*0024*/ uint32			number_in_stack;
+/*0028*/ uint8			unknown[8];
+};
+
+struct MultiMoveItem_Struct
+{
+/*0000*/ uint32	count;
+/*0004*/ MultiMoveItemSub_Struct moves[0];
+};
+
 //
 // from_slot/to_slot
 // -1 - destroy
@@ -2092,7 +2134,7 @@ struct OnLevelMessage_Struct {
 /*0000*/	uint32  ButtonName1_Count;
 /*0000*/	char	ButtonName1[25];
 /*0000*/	uint8	Buttons;
-/*0000*/	uint8	Unknown4275;	// Something to do with audio controls
+/*0000*/	uint8	SoundControls;	// Something to do with audio controls
 /*0000*/	uint32  Duration;
 /*0000*/	uint32  PopupID;	// If none zero, a response packet with 00 00 00 00 <PopupID> is returned on clicking the left button
 /*0000*/	uint32  NegativeID;	// If none zero, a response packet with 01 00 00 00 <NegativeID> is returned on clicking the right button
@@ -2304,7 +2346,6 @@ struct AltCurrencySelectItem_Struct
 /*064*/ uint32 unknown064;
 /*068*/ uint32 unknown068;
 /*072*/ uint32 unknown072;
-/*076*/ uint32 unknown076;
 };
 
 //Server -> Client
@@ -2423,7 +2464,7 @@ struct AdventureLeaderboard_Struct
 /*struct Item_Shop_Struct {
 	uint16 merchantid;
 	uint8 itemtype;
-	ItemBase item;
+	ItemData item;
 	uint8 iss_unknown001[6];
 };*/
 
@@ -2566,9 +2607,12 @@ struct GroupJoin_Struct_Live {	// New for Live
 };
 
 struct GroupJoin_Struct {
-/*000*/	char	unknown000[64];
+/*000*/	char	owner_name[64]; // merc
 /*064*/	char	membername[64];
-/*128*/	uint8	unknown128[20];	// Leadership AA ?
+/*128*/	uint8	merc;
+/*129*/	uint8	padding129[3];
+/*132*/	uint32	level;
+/*136*/	uint8	unknown136[12];	// group ID most likely in here judging from like captures (unused by client)
 /*148*/
 };
 
@@ -2826,7 +2870,8 @@ struct BookText_Struct {
 struct BookRequest_Struct {
 /*0000*/	uint32 window;		// where to display the text (0xFFFFFFFF means new window).
 /*0004*/	uint16 invslot;		// Is the slot, but the RoF2 conversion causes it to fail.  Turned to 0 since it isnt required anyway.
-/*0008*/	uint32 unknown006;	// Seen FFFFFFFF
+/*0006*/	int16 subslot;		// Inventory sub-slot (0-x)
+/*0008*/	uint16 unknown006;	// Seen FFFF
 /*0010*/	uint16 unknown008;	// seen 0000
 /*0012*/	uint32 type;		// 0 = Scroll, 1 = Book, 2 = Item Info. Possibly others
 /*0016*/	uint32 unknown0012;
@@ -3555,21 +3600,6 @@ struct GuildSetRank_Struct
 /*80*/
 };
 
-struct BugStruct{
-/*0000*/	char	chartype[64];
-/*0064*/	char	name[96];
-/*0160*/	char	ui[128];
-/*0288*/	float	x;
-/*0292*/	float	y;
-/*0296*/	float	z;
-/*0300*/	float	heading;
-/*0304*/	uint32	unknown304;
-/*0308*/	uint32	type;
-/*0312*/	char	unknown312[2144];
-/*2456*/	char	bug[1024];
-/*3480*/	char	placeholder[2];
-/*3482*/	char	system_info[4098];
-};
 struct Make_Pet_Struct { //Simple struct for getting pet info
 	uint8 level;
 	uint8 class_;
@@ -3596,20 +3626,21 @@ struct Ground_Spawn{
 struct Ground_Spawns {
 	struct Ground_Spawn spawn[50]; //Assigned max number to allow
 };
-struct PetitionBug_Struct{
-	uint32	petition_number;
-	uint32	unknown4;
-	char	accountname[64];
-	uint32	zoneid;
-	char	name[64];
-	uint32	level;
-	uint32	class_;
-	uint32	race;
-	uint32	unknown152[3];
-	uint32	time;
-	uint32	unknown168;
-	char	text[1028];
-};
+
+//struct PetitionBug_Struct{
+//	uint32	petition_number;
+//	uint32	unknown4;
+//	char	accountname[64];
+//	uint32	zoneid;
+//	char	name[64];
+//	uint32	level;
+//	uint32	class_;
+//	uint32	race;
+//	uint32	unknown152[3];
+//	uint32	time;
+//	uint32	unknown168;
+//	char	text[1028];
+//};
 
 struct ApproveZone_Struct {
 	char	name[64];
@@ -5051,6 +5082,23 @@ struct CrystalCountUpdate_Struct
 	/*004*/	uint32	CareerRadiantCrystals;
 	/*008*/	uint32	CurrentEbonCrystals;
 	/*012*/	uint32	CareerEbonCrystals;
+};
+
+struct SayLinkBodyFrame_Struct {
+/*000*/	char ActionID[1];
+/*001*/	char ItemID[5];
+/*006*/	char Augment1[5];
+/*011*/	char Augment2[5];
+/*016*/	char Augment3[5];
+/*021*/	char Augment4[5];
+/*026*/	char Augment5[5];
+/*031*/	char Augment6[5];
+/*036*/	char IsEvolving[1];
+/*037*/	char EvolveGroup[4];
+/*041*/	char EvolveLevel[2];
+/*043*/	char OrnamentIcon[5];
+/*048*/	char Hash[8];
+/*056*/
 };
 
 	}; /*structs*/

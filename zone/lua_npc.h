@@ -31,6 +31,12 @@ public:
 	int CheckNPCFactionAlly(int faction);
 	void AddItem(int item_id, int charges);
 	void AddItem(int item_id, int charges, bool equip);
+	void AddItem(int item_id, int charges, bool equip, int aug1);
+	void AddItem(int item_id, int charges, bool equip, int aug1, int aug2);
+	void AddItem(int item_id, int charges, bool equip, int aug1, int aug2, int aug3);
+	void AddItem(int item_id, int charges, bool equip, int aug1, int aug2, int aug3, int aug4);
+	void AddItem(int item_id, int charges, bool equip, int aug1, int aug2, int aug3, int aug4, int aug5);
+	void AddItem(int item_id, int charges, bool equip, int aug1, int aug2, int aug3, int aug4, int aug5, int aug6);
 	void AddLootTable();
 	void AddLootTable(int id);
 	void RemoveItem(int item_id);
@@ -104,6 +110,7 @@ public:
 	void SetSwarmTarget(int target);
 	void ModifyNPCStat(const char *stat, const char *value);
 	void AddAISpell(int priority, int spell_id, int type, int mana_cost, int recast_delay, int resist_adjust);
+	void AddAISpell(int priority, int spell_id, int type, int mana_cost, int recast_delay, int resist_adjust, int min_hp, int max_hp);
 	void RemoveAISpell(int spell_id);
 	void SetSpellFocusDMG(int focus);
 	void SetSpellFocusHeal(int focus);
@@ -117,8 +124,8 @@ public:
 	int GetScore();
 	void MerchantOpenShop();
 	void MerchantCloseShop();
-	void SetMerchantProbability(uint8 amt);
-	uint8 GetMerchantProbability();
+	int GetRawAC();
+	int GetAvoidanceRating();
 };
 
 #endif

@@ -38,7 +38,11 @@
 
 #include <sstream>
 
-#define BOT_DEFAULT_FOLLOW_DISTANCE 184
+#define BOT_FOLLOW_DISTANCE_DEFAULT 184 // as DSq value (~13.565 units)
+#define BOT_FOLLOW_DISTANCE_DEFAULT_MAX 2500 // as DSq value (50 units)
+#define BOT_FOLLOW_DISTANCE_WALK 1000 // as DSq value (~31.623 units)
+
+#define BOT_LEASH_DISTANCE 250000 // as DSq value (500 units)
 
 extern WorldServer worldserver;
 
@@ -47,8 +51,6 @@ const int MaxSpellTimer = 15;
 const int MaxDisciplineTimer = 10;
 const int DisciplineReuseStart = MaxSpellTimer + 1;
 const int MaxTimer = MaxSpellTimer + MaxDisciplineTimer;
-const int MaxStances = 7;
-const int MaxSpellTypes = 16;
 
 enum BotStanceType {
 	BotStancePassive,
@@ -58,7 +60,8 @@ enum BotStanceType {
 	BotStanceAggressive,
 	BotStanceBurn,
 	BotStanceBurnAE,
-	BotStanceUnknown
+	BotStanceUnknown,
+	MaxStances = BotStanceUnknown
 };
 
 #define BOT_STANCE_COUNT 8
@@ -77,9 +80,9 @@ static const std::string bot_stance_name[BOT_STANCE_COUNT] = {
 
 static const char* GetBotStanceName(int stance_id) { return bot_stance_name[VALIDBOTSTANCE(stance_id)].c_str(); }
 
-#define VALIDBOTEQUIPSLOT(x) ((x >= EQEmu::legacy::EQUIPMENT_BEGIN && x <= EQEmu::legacy::EQUIPMENT_END) ? (x) : ((x == EQEmu::legacy::SlotPowerSource) ? (22) : (23)))
+#define VALIDBOTEQUIPSLOT(x) ((x >= EQEmu::invslot::EQUIPMENT_BEGIN && x <= EQEmu::invslot::EQUIPMENT_END) ? (x) : ((x == EQEmu::invslot::SLOT_POWER_SOURCE) ? (22) : (23)))
 
-static std::string bot_equip_slot_name[EQEmu::legacy::EQUIPMENT_SIZE + 2] =
+static std::string bot_equip_slot_name[EQEmu::invslot::EQUIPMENT_COUNT + 2] =
 {
 	"Charm",			// MainCharm
 	"Left Ear",			// MainEar1
@@ -125,8 +128,54 @@ enum SpellTypeIndex {
 	SpellType_CharmIndex,
 	SpellType_SlowIndex,
 	SpellType_DebuffIndex,
-	SpellType_CureIndex
+	SpellType_CureIndex,
+	SpellType_ResurrectIndex,
+	SpellType_HateReduxIndex,
+	SpellType_InCombatBuffSongIndex,
+	SpellType_OutOfCombatBuffSongIndex,
+	SpellType_PreCombatBuffIndex,
+	SpellType_PreCombatBuffSongIndex,
+	MaxSpellTypes
 };
+
+// nHSND	negative Healer/Slower/Nuker/Doter
+// pH		positive Healer
+// pS		positive Slower
+// pHS		positive Healer/Slower
+// pN		positive Nuker
+// pHN		positive Healer/Nuker
+// pSN		positive Slower/Nuker
+// pHSN		positive Healer/Slower/Nuker
+// pD		positive Doter
+// pHD		positive Healer/Doter
+// pSD		positive Slower/Doter
+// pHSD		positive Healer/Slower/Doter
+// pND		positive Nuker/Doter
+// pHND		positive Healer/Nuker/Doter
+// pSND		positive Slower/Nuker/Doter
+// pHSND	positive Healer/Slower/Nuker/Doter
+// cntHSND	count Healer/Slower/Nuker/Doter
+enum BotCastingChanceConditional : uint8
+{
+	nHSND = 0,
+	pH,
+	pS,
+	pHS,
+	pN,
+	pHN,
+	pSN,
+	pHSN,
+	pD,
+	pHD,
+	pSD,
+	pHSD,
+	pND,
+	pHND,
+	pSND,
+	pHSND,
+	cntHSND = 16
+};
+
 
 class Bot : public NPC {
 	friend class Mob;
@@ -206,9 +255,9 @@ public:
 
 	//abstract virtual function implementations requird by base abstract class
 	virtual bool Death(Mob* killerMob, int32 damage, uint16 spell_id, EQEmu::skills::SkillType attack_skill);
-	virtual void Damage(Mob* from, int32 damage, uint16 spell_id, EQEmu::skills::SkillType attack_skill, bool avoidable = true, int8 buffslot = -1, bool iBuffTic = false, int special = 0);
-	virtual bool Attack(Mob* other, int Hand = EQEmu::legacy::SlotPrimary, bool FromRiposte = false, bool IsStrikethrough = false, bool IsFromSpell = false,
-		ExtraAttackOptions *opts = nullptr, int special = 0);
+	virtual void Damage(Mob* from, int32 damage, uint16 spell_id, EQEmu::skills::SkillType attack_skill, bool avoidable = true, int8 buffslot = -1, bool iBuffTic = false, eSpecialAttacks special = eSpecialAttacks::None);
+	virtual bool Attack(Mob* other, int Hand = EQEmu::invslot::slotPrimary, bool FromRiposte = false, bool IsStrikethrough = false, bool IsFromSpell = false,
+		ExtraAttackOptions *opts = nullptr);
 	virtual bool HasRaid() { return (GetRaid() ? true : false); }
 	virtual bool HasGroup() { return (GetGroup() ? true : false); }
 	virtual Raid* GetRaid() { return entity_list.GetRaidByMob(this); }
@@ -226,7 +275,7 @@ public:
 	static bool IsValidRaceClassCombo(uint16 r, uint8 c);
 	bool IsValidName();
 	static bool IsValidName(std::string& name);
-	void Spawn(Client* botCharacterOwner);
+	bool Spawn(Client* botCharacterOwner);
 	virtual void SetLevel(uint8 in_level, bool command = false);
 	virtual void FillSpawnStruct(NewSpawn_Struct* ns, Mob* ForWho);
 	virtual bool Process();
@@ -235,11 +284,11 @@ public:
 	virtual void Depop();
 	void CalcBotStats(bool showtext = true);
 	uint16 BotGetSpells(int spellslot) { return AIspells[spellslot].spellid; }
-	uint16 BotGetSpellType(int spellslot) { return AIspells[spellslot].type; }
+	uint32 BotGetSpellType(int spellslot) { return AIspells[spellslot].type; }
 	uint16 BotGetSpellPriority(int spellslot) { return AIspells[spellslot].priority; }
 	virtual float GetProcChances(float ProcBonus, uint16 hand);
 	virtual int GetHandToHandDamage(void);
-	virtual bool TryFinishingBlow(Mob *defender, EQEmu::skills::SkillType skillinuse);
+	virtual bool TryFinishingBlow(Mob *defender, int &damage);
 	virtual void DoRiposte(Mob* defender);
 	inline virtual int32 GetATK() const { return ATK + itembonuses.ATK + spellbonuses.ATK + ((GetSTR() + GetSkill(EQEmu::skills::SkillOffense)) * 9 / 10); }
 	inline virtual int32 GetATKBonus() const { return itembonuses.ATK + spellbonuses.ATK; }
@@ -248,19 +297,18 @@ public:
 	uint16 GetPrimarySkillValue();
 	uint16	MaxSkill(EQEmu::skills::SkillType skillid, uint16 class_, uint16 level) const;
 	inline	uint16	MaxSkill(EQEmu::skills::SkillType skillid) const { return MaxSkill(skillid, GetClass(), GetLevel()); }
+	virtual int GetBaseSkillDamage(EQEmu::skills::SkillType skill, Mob *target = nullptr);
 	virtual void DoSpecialAttackDamage(Mob *who, EQEmu::skills::SkillType skill, int32 max_damage, int32 min_damage = 1, int32 hate_override = -1, int ReuseTime = 10, bool HitChance = false);
 	virtual void TryBackstab(Mob *other,int ReuseTime = 10);
 	virtual void RogueBackstab(Mob* other, bool min_damage = false, int ReuseTime = 10);
 	virtual void RogueAssassinate(Mob* other);
 	virtual void DoClassAttacks(Mob *target, bool IsRiposte=false);
-	virtual bool TryHeadShot(Mob* defender, EQEmu::skills::SkillType skillInUse);
-	virtual void DoMeleeSkillAttackDmg(Mob* other, uint16 weapon_damage, EQEmu::skills::SkillType skillinuse, int16 chance_mod = 0, int16 focus = 0, bool CanRiposte = false, int ReuseTime = 0);
 	virtual void ApplySpecialAttackMod(EQEmu::skills::SkillType skill, int32 &dmg, int32 &mindmg);
 	bool CanDoSpecialAttack(Mob *other);
 	virtual int32 CheckAggroAmount(uint16 spellid);
 	virtual void CalcBonuses();
 	void CalcItemBonuses(StatBonuses* newbon);
-	void AddItemBonuses(const ItemInst *inst, StatBonuses* newbon, bool isAug = false, bool isTribute = false, int rec_override = 0);
+	void AddItemBonuses(const EQEmu::ItemInstance *inst, StatBonuses* newbon, bool isAug = false, bool isTribute = false, int rec_override = 0);
 	int CalcRecommendedLevelBonus(uint8 level, uint8 reclevel, int basestat);
 	virtual void MakePet(uint16 spell_id, const char* pettype, const char *petname = nullptr);
 	virtual FACTION_VALUE GetReverseFactionCon(Mob* iOther);
@@ -279,7 +327,7 @@ public:
 	bool DoFinishedSpellGroupTarget(uint16 spell_id, Mob* spellTarget, EQEmu::CastingSlot slot, bool &stopLogic);
 	void SendBotArcheryWearChange(uint8 material_slot, uint32 material, uint32 color);
 	void Camp(bool databaseSave = true);
-	virtual void AddToHateList(Mob* other, uint32 hate = 0, int32 damage = 0, bool iYellForHelp = true, bool bFrenzy = false, bool iBuffTic = false);
+	virtual void AddToHateList(Mob* other, uint32 hate = 0, int32 damage = 0, bool iYellForHelp = true, bool bFrenzy = false, bool iBuffTic = false, bool pet_command = false);
 	virtual void SetTarget(Mob* mob);
 	virtual void Zone();
 	std::vector<AISpells_Struct> GetBotSpells() { return AIspells; }
@@ -289,14 +337,15 @@ public:
 	void Stand();
 	bool IsSitting();
 	bool IsStanding();
-	bool IsBotCasterCombatRange(Mob *target);
-	bool CalculateNewPosition2(float x, float y, float z, float speed, bool checkZ = true) ;
+	int GetBotWalkspeed() const { return (int)((float)_GetWalkSpeed() * 1.786f); } // 1.25 / 0.7 = 1.7857142857142857142857142857143
+	int GetBotRunspeed() const { return (int)((float)_GetRunSpeed() * 1.786f); }
+	int GetBotFearSpeed() const { return (int)((float)_GetFearSpeed() * 1.786f); }
 	bool UseDiscipline(uint32 spell_id, uint32 target);
 	uint8 GetNumberNeedingHealedInGroup(uint8 hpr, bool includePets);
 	bool GetNeedsCured(Mob *tar);
+	bool GetNeedsHateRedux(Mob *tar);
 	bool HasOrMayGetAggro();
 	void SetDefaultBotStance();
-	void CalcChanceToCast();
 
 	inline virtual int32	GetMaxStat();
 	inline virtual int32	GetMaxResist();
@@ -350,15 +399,17 @@ public:
 	void DoEnduranceUpkeep();	//does the endurance upkeep
 
 	// AI Methods
-	virtual bool AICastSpell(Mob* tar, uint8 iChance, uint16 iSpellTypes);
+	virtual bool AICastSpell(Mob* tar, uint8 iChance, uint32 iSpellTypes);
 	virtual bool AI_EngagedCastCheck();
 	virtual bool AI_PursueCastCheck();
 	virtual bool AI_IdleCastCheck();
 	bool AIHealRotation(Mob* tar, bool useFastHeals);
 	bool GetPauseAI() { return _pauseAI; }
 	void SetPauseAI(bool pause_flag) { _pauseAI = pause_flag; }
+	uint8 GetStopMeleeLevel() { return _stopMeleeLevel; }
+	void SetStopMeleeLevel(uint8 level);
+	void SetGuardMode();
 	
-
 	// Mob AI Virtual Override Methods
 	virtual void AI_Process();
 	virtual void AI_Stop();
@@ -382,10 +433,10 @@ public:
 	virtual bool DoCastSpell(uint16 spell_id, uint16 target_id, EQEmu::CastingSlot slot = EQEmu::CastingSlot::Item, int32 casttime = -1, int32 mana_cost = -1, uint32* oSpellWillFinish = 0, uint32 item_slot = 0xFFFFFFFF, uint32 aa_id = 0);
 
 	// Bot Equipment & Inventory Class Methods
-	void BotTradeSwapItem(Client* client, int16 lootSlot, const ItemInst* inst, const ItemInst* inst_swap, uint32 equipableSlots, std::string* errorMessage, bool swap = true);
-	void BotTradeAddItem(uint32 id, const ItemInst* inst, int16 charges, uint32 equipableSlots, uint16 lootSlot, std::string* errorMessage, bool addToDb = true);
+	void BotTradeSwapItem(Client* client, int16 lootSlot, const EQEmu::ItemInstance* inst, const EQEmu::ItemInstance* inst_swap, uint32 equipableSlots, std::string* errorMessage, bool swap = true);
+	void BotTradeAddItem(uint32 id, const EQEmu::ItemInstance* inst, int16 charges, uint32 equipableSlots, uint16 lootSlot, std::string* errorMessage, bool addToDb = true);
 	void EquipBot(std::string* errorMessage);
-	bool CheckLoreConflict(const EQEmu::ItemBase* item);
+	bool CheckLoreConflict(const EQEmu::ItemData* item);
 	virtual void UpdateEquipmentLight() { m_Light.Type[EQEmu::lightsource::LightEquipment] = m_inv.FindBrightestLightType(); m_Light.Level[EQEmu::lightsource::LightEquipment] = EQEmu::lightsource::TypeToLevel(m_Light.Type[EQEmu::lightsource::LightEquipment]); }
 
 	// Static Class Methods	
@@ -414,10 +465,13 @@ public:
 	static int32 GetDisciplineRecastTimer(Bot *caster, int timer_index);
 	static bool CheckDisciplineRecastTimers(Bot *caster, int timer_index);
 	static uint32 GetDisciplineRemainingTime(Bot *caster, int timer_index);
+
 	static std::list<BotSpell> GetBotSpellsForSpellEffect(Bot* botCaster, int spellEffect);
 	static std::list<BotSpell> GetBotSpellsForSpellEffectAndTargetType(Bot* botCaster, int spellEffect, SpellTargetType targetType);
-	static std::list<BotSpell> GetBotSpellsBySpellType(Bot* botCaster, uint16 spellType);
-	static BotSpell GetFirstBotSpellBySpellType(Bot* botCaster, uint16 spellType);
+	static std::list<BotSpell> GetBotSpellsBySpellType(Bot* botCaster, uint32 spellType);
+	static std::list<BotSpell_wPriority> GetPrioritizedBotSpellsBySpellType(Bot* botCaster, uint32 spellType);
+
+	static BotSpell GetFirstBotSpellBySpellType(Bot* botCaster, uint32 spellType);
 	static BotSpell GetBestBotSpellForFastHeal(Bot* botCaster);
 	static BotSpell GetBestBotSpellForHealOverTime(Bot* botCaster);
 	static BotSpell GetBestBotSpellForPercentageHeal(Bot* botCaster);
@@ -428,6 +482,7 @@ public:
 	static BotSpell GetBestBotSpellForGroupHeal(Bot* botCaster);
 	static BotSpell GetBestBotSpellForMagicBasedSlow(Bot* botCaster);
 	static BotSpell GetBestBotSpellForDiseaseBasedSlow(Bot* botCaster);
+
 	static Mob* GetFirstIncomingMobToMez(Bot* botCaster, BotSpell botSpell);
 	static BotSpell GetBestBotSpellForMez(Bot* botCaster);
 	static BotSpell GetBestBotMagicianPetSpell(Bot* botCaster);
@@ -438,17 +493,12 @@ public:
 	static BotSpell GetDebuffBotSpell(Bot* botCaster, Mob* target);
 	static BotSpell GetBestBotSpellForCure(Bot* botCaster, Mob* target);
 	static BotSpell GetBestBotSpellForResistDebuff(Bot* botCaster, Mob* target);
+	
 	static NPCType CreateDefaultNPCTypeStructForBot(std::string botName, std::string botLastName, uint8 botLevel, uint16 botRace, uint8 botClass, uint8 gender);
 
 	// Static Bot Group Methods
 	static bool AddBotToGroup(Bot* bot, Group* group);
 	static bool RemoveBotFromGroup(Bot* bot, Group* group);
-	static bool	GroupHasClass(Group* group, uint8 classId);
-	static bool GroupHasClericClass(Group* group) { return GroupHasClass(group, CLERIC); }
-	static bool GroupHasDruidClass(Group* group) { return GroupHasClass(group, DRUID); }
-	static bool GroupHasShamanClass(Group* group) { return GroupHasClass(group, SHAMAN); }
-	static bool GroupHasEnchanterClass(Group* group) { return GroupHasClass(group, ENCHANTER); }
-	static bool GroupHasPriestClass(Group* group) { return GroupHasClass(group, CLERIC | DRUID | SHAMAN); }
 	static void BotGroupSay(Mob *speaker, const char *msg, ...);
 
 	// "GET" Class Methods
@@ -457,7 +507,7 @@ public:
 	uint32 GetBotSpellID() { return npc_spells_id; }
 	Mob* GetBotOwner() { return this->_botOwner; }
 	uint32 GetBotArcheryRange();
-	ItemInst* GetBotItem(uint32 slotID);
+	EQEmu::ItemInstance* GetBotItem(uint32 slotID);
 	virtual bool GetSpawnStatus() { return _spawnStatus; }
 	uint8 GetPetChooserID() { return _petChooserID; }
 	bool IsPetChooser() { return _petChooser; }
@@ -467,17 +517,26 @@ public:
 	bool GetRangerAutoWeaponSelect() { return _rangerAutoWeaponSelect; }
 	BotRoleType GetBotRole() { return _botRole; }
 	BotStanceType GetBotStance() { return _botStance; }
-	uint8 GetChanceToCastBySpellType(uint16 spellType);
-	bool IsGroupPrimaryHealer();
-	bool IsGroupPrimarySlower();
+	uint8 GetChanceToCastBySpellType(uint32 spellType);
+
+	bool IsGroupHealer() { return m_CastingRoles.GroupHealer; }
+	bool IsGroupSlower() { return m_CastingRoles.GroupSlower; }
+	bool IsGroupNuker() { return m_CastingRoles.GroupNuker; }
+	bool IsGroupDoter() { return m_CastingRoles.GroupDoter; }
+	static void UpdateGroupCastingRoles(const Group* group, bool disband = false);
+
+	//bool IsRaidHealer() { return m_CastingRoles.RaidHealer; }
+	//bool IsRaidSlower() { return m_CastingRoles.RaidSlower; }
+	//bool IsRaidNuker() { return m_CastingRoles.RaidNuker; }
+	//bool IsRaidDoter() { return m_CastingRoles.RaidDoter; }
+	//static void UpdateRaidCastingRoles(const Raid* raid, bool disband = false);
+
 	bool IsBotCaster() { return IsCasterClass(GetClass()); }
 	bool IsBotINTCaster() { return IsINTCasterClass(GetClass()); }
 	bool IsBotWISCaster() { return IsWISCasterClass(GetClass()); }
 	bool CanHeal();
 	int GetRawACNoShield(int &shield_ac);
-	bool GetHasBeenSummoned() { return _hasBeenSummoned; }
-	const glm::vec3 GetPreSummonLocation() const { return m_PreSummonLocation; }
-
+	
 	// new heal rotation code
 	bool CreateHealRotation(uint32 cycle_duration_ms = 5000, bool fast_heals = false, bool adaptive_targeting = false, bool casting_override = false);
 	bool DestroyHealRotation();
@@ -503,7 +562,6 @@ public:
 
 	bool GetAltOutOfCombatBehavior() { return _altoutofcombatbehavior;}
 	bool GetShowHelm() { return _showhelm; }
-	inline virtual int32	GetAC()	const { return AC; }
 	inline virtual int32	GetSTR()	const { return STR; }
 	inline virtual int32	GetSTA()	const { return STA; }
 	inline virtual int32	GetDEX()	const { return DEX; }
@@ -572,9 +630,6 @@ public:
 	void SetBotStance(BotStanceType botStance) { _botStance = ((botStance != BotStanceUnknown) ? (botStance) : (BotStancePassive)); }
 	void SetSpellRecastTimer(int timer_index, int32 recast_delay);
 	void SetDisciplineRecastTimer(int timer_index, int32 recast_delay);
-	void SetHasBeenSummoned(bool s);
-	void SetPreSummonLocation(const glm::vec3& location) { m_PreSummonLocation = location; }
-
 	void SetAltOutOfCombatBehavior(bool behavior_flag) { _altoutofcombatbehavior = behavior_flag;}
 	void SetShowHelm(bool showhelm) { _showhelm = showhelm; }
 	void SetBeardColor(uint8 value) { beardcolor = value; }
@@ -599,7 +654,7 @@ public:
 
 	// Publicized private functions
 	static NPCType FillNPCTypeStruct(uint32 botSpellsID, std::string botName, std::string botLastName, uint8 botLevel, uint16 botRace, uint8 botClass, uint8 gender, float size, uint32 face, uint32 hairStyle, uint32 hairColor, uint32 eyeColor, uint32 eyeColor2, uint32 beardColor, uint32 beard, uint32 drakkinHeritage, uint32 drakkinTattoo, uint32 drakkinDetails, int32 hp, int32 mana, int32 mr, int32 cr, int32 dr, int32 fr, int32 pr, int32 corrup, int32 ac, uint32 str, uint32 sta, uint32 dex, uint32 agi, uint32 _int, uint32 wis, uint32 cha, uint32 attack);
-	void BotRemoveEquipItem(int slot);
+	void BotRemoveEquipItem(int16 slot);
 	void RemoveBotItemBySlot(uint32 slotID, std::string* errorMessage);
 	uint32 GetTotalPlayTime();
 
@@ -632,7 +687,16 @@ protected:
 	virtual int32 CalcBotAAFocus(BotfocusType type, uint32 aa_ID, uint32 points, uint16 spell_id);
 	virtual void PerformTradeWithClient(int16 beginSlotID, int16 endSlotID, Client* client);
 	virtual bool AIDoSpellCast(uint8 i, Mob* tar, int32 mana_cost, uint32* oDontDoAgainBefore = 0);
-	virtual float GetMaxMeleeRangeToTarget(Mob* target);
+
+	BotCastingRoles& GetCastingRoles() { return m_CastingRoles; }
+	void SetGroupHealer(bool flag = true) { m_CastingRoles.GroupHealer = flag; }
+	void SetGroupSlower(bool flag = true) { m_CastingRoles.GroupSlower = flag; }
+	void SetGroupNuker(bool flag = true) { m_CastingRoles.GroupNuker = flag; }
+	void SetGroupDoter(bool flag = true) { m_CastingRoles.GroupDoter = flag; }
+	//void SetRaidHealer(bool flag = true) { m_CastingRoles.RaidHealer = flag; }
+	//void SetRaidSlower(bool flag = true) { m_CastingRoles.RaidSlower = flag; }
+	//void SetRaidNuker(bool flag = true) { m_CastingRoles.RaidNuker = flag; }
+	//void SetRaidDoter(bool flag = true) { m_CastingRoles.RaidDoter = flag; }
 
 private:
 	// Class Members
@@ -647,7 +711,7 @@ private:
 	bool _petChooser;
 	uint8 _petChooserID;
 	bool berserk;
-	Inventory m_inv;
+	EQEmu::InventoryProfile m_inv;
 	double _lastTotalPlayTime;
 	time_t _startTotalPlayTime;
 	Mob* _previousTarget;
@@ -668,9 +732,10 @@ private:
 	int32	max_end;
 	int32	end_regen;
 	uint32 timers[MaxTimer];
-	bool _hasBeenSummoned;
-	glm::vec3 m_PreSummonLocation;
-	uint8 _spellCastingChances[MaxStances][MaxSpellTypes];
+	
+	Timer evade_timer; // can be moved to pTimers at some point
+
+	BotCastingRoles m_CastingRoles;
 
 	std::shared_ptr<HealRotation> m_member_of_heal_rotation;
 
@@ -679,6 +744,7 @@ private:
 	bool _altoutofcombatbehavior;
 	bool _showhelm;
 	bool _pauseAI;
+	uint8 _stopMeleeLevel;
 
 	// Private "base stats" Members
 	int32 _baseMR;
@@ -711,7 +777,7 @@ private:
 	void SetBotID(uint32 botID);
 
 	// Private "Inventory" Methods
-	void GetBotItems(Inventory &inv, std::string* errorMessage);
+	void GetBotItems(EQEmu::InventoryProfile &inv, std::string* errorMessage);
 	void BotAddEquipItem(int slot, uint32 id);
 	uint32 GetBotItemBySlot(uint32 slotID);
 

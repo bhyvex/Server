@@ -1,6 +1,8 @@
 #ifndef ZONEDB_H_
 #define ZONEDB_H_
 
+#include <unordered_set>
+
 #include "../common/shareddb.h"
 #include "../common/eq_packet_structs.h"
 #include "position.h"
@@ -16,7 +18,7 @@ class NPC;
 class Petition;
 class Spawn2;
 class SpawnGroupList;
-class ItemInst;
+class Trap;
 struct CharacterEventLog_Struct;
 struct Door;
 struct ExtendedProfile_Struct;
@@ -24,6 +26,12 @@ struct NPCType;
 struct PlayerCorpse_Struct;
 struct ZonePoint;
 struct npcDecayTimes_Struct;
+
+namespace EQEmu
+{
+	class ItemInstance;
+}
+
 template <class TYPE> class LinkedList;
 
 //#include "doors.h"
@@ -40,13 +48,15 @@ struct wplist {
 #pragma pack(1)
 struct DBnpcspells_entries_Struct {
 	int16	spellid;
-	uint16	type;
 	uint8	minlevel;
 	uint8	maxlevel;
+	uint32	type;
 	int16	manacost;
-	int32	recast_delay;
 	int16	priority;
+	int32	recast_delay;
 	int16	resist_adjust;
+	int8	min_hp;
+	int8	max_hp;
 };
 #pragma pack()
 
@@ -69,7 +79,6 @@ struct DBnpcspells_Struct {
 	int16	rproc_chance;
 	uint16	defensive_proc;
 	int16	dproc_chance;
-	uint32	numentries;
 	uint32	fail_recast;
 	uint32	engaged_no_sp_recast_min;
 	uint32	engaged_no_sp_recast_max;
@@ -82,7 +91,7 @@ struct DBnpcspells_Struct {
 	uint32  idle_no_sp_recast_min;
 	uint32  idle_no_sp_recast_max;
 	uint8	idle_beneficial_chance;
-	DBnpcspells_entries_Struct entries[0];
+	std::vector<DBnpcspells_entries_Struct> entries;
 };
 
 struct DBnpcspellseffects_Struct {
@@ -118,6 +127,19 @@ struct PetRecord {
 	uint32 equipmentset;	// default equipment for the pet
 };
 
+struct AuraRecord {
+	uint32 npc_type;
+	char name[64]; // name shown in UI if shown and spawn name
+	int spell_id;
+	int distance;
+	int aura_type;
+	int spawn_type;
+	int movement;
+	int duration; // seconds some live for 90 mins (normal) others for 2 mins (traps)
+	int icon; // -1 will use the buffs NEW_ICON
+	int cast_time; // seconds some auras recast on a timer, most seem to be every 12 seconds
+};
+
 // Actual pet info for a client.
 struct PetInfo {
 	uint16	SpellID;
@@ -126,7 +148,7 @@ struct PetInfo {
 	uint32	Mana;
 	float	size;
 	SpellBuff_Struct	Buffs[PET_BUFF_COUNT];
-	uint32	Items[EQEmu::legacy::EQUIPMENT_SIZE];
+	uint32	Items[EQEmu::invslot::EQUIPMENT_COUNT];
 	char	Name[64];
 };
 
@@ -224,11 +246,11 @@ public:
 	virtual ~ZoneDatabase();
 
 	/* Objects and World Containers  */
-	void	LoadWorldContainer(uint32 parentid, ItemInst* container);
-	void	SaveWorldContainer(uint32 zone_id, uint32 parent_id, const ItemInst* container);
+	void	LoadWorldContainer(uint32 parentid, EQEmu::ItemInstance* container);
+	void	SaveWorldContainer(uint32 zone_id, uint32 parent_id, const EQEmu::ItemInstance* container);
 	void	DeleteWorldContainer(uint32 parent_id,uint32 zone_id);
-	uint32	AddObject(uint32 type, uint32 icon, const Object_Struct& object, const ItemInst* inst);
-	void	UpdateObject(uint32 id, uint32 type, uint32 icon, const Object_Struct& object, const ItemInst* inst);
+	uint32	AddObject(uint32 type, uint32 icon, const Object_Struct& object, const EQEmu::ItemInstance* inst);
+	void	UpdateObject(uint32 id, uint32 type, uint32 icon, const Object_Struct& object, const EQEmu::ItemInstance* inst);
 	void	DeleteObject(uint32 id);
 	Ground_Spawns*	LoadGroundSpawns(uint32 zone_id, int16 version, Ground_Spawns* gs);
 
@@ -239,7 +261,7 @@ public:
 	void	DeleteTraderItem(uint32 char_id);
 	void	DeleteTraderItem(uint32 char_id,uint16 slot_id);
 
-	ItemInst* LoadSingleTraderItem(uint32 char_id, int uniqueid);
+	EQEmu::ItemInstance* LoadSingleTraderItem(uint32 char_id, int uniqueid);
 	Trader_Struct* LoadTraderItem(uint32 char_id);
 	TraderCharges_Struct* LoadTraderItemWithCharges(uint32 char_id);
 
@@ -255,6 +277,8 @@ public:
 
 	void SaveBuffs(Client *c);
 	void LoadBuffs(Client *c);
+	void SaveAuras(Client *c);
+	void LoadAuras(Client *c);
 	void LoadPetInfo(Client *c);
 	void SavePetInfo(Client *c);
 	void RemoveTempFactions(Client *c);
@@ -399,9 +423,12 @@ public:
 	void		AddLootDropToNPC(NPC* npc, uint32 lootdrop_id, ItemList* itemlist, uint8 droplimit, uint8 mindrop);
 	uint32		GetMaxNPCSpellsID();
 	uint32		GetMaxNPCSpellsEffectsID();
+	bool GetAuraEntry(uint16 spell_id, AuraRecord &record);
+	void LoadGlobalLoot();
 
 	DBnpcspells_Struct*				GetNPCSpells(uint32 iDBSpellsID);
 	DBnpcspellseffects_Struct*		GetNPCSpellsEffects(uint32 iDBSpellsEffectsID);
+	void ClearNPCSpells() { npc_spells_cache.clear(); npc_spells_loadtried.clear(); }
 	const NPCType* LoadNPCTypesData(uint32 id, bool bulk_load = false);
 
 	/* Mercs   */
@@ -415,8 +442,9 @@ public:
 	bool	DeleteMerc(uint32 merc_id);
 
 	/* Petitions   */
-	void	UpdateBug(BugStruct* bug);
-	void	UpdateBug(PetitionBug_Struct* bug);
+	void	RegisterBug(BugReport_Struct* bug_report); // old method
+	void	RegisterBug(Client* client, BugReport_Struct* bug_report); // new method
+	//void	UpdateBug(PetitionBug_Struct* bug);
 	void	DeletePetitionFromDB(Petition* wpet);
 	void	UpdatePetitionToDB(Petition* wpet);
 	void	InsertPetitionToDB(Petition* wpet);
@@ -427,7 +455,7 @@ public:
 	void	DeleteMerchantTemp(uint32 npcid, uint32 slot);
 
 	/* Tradeskills  */
-	bool	GetTradeRecipe(const ItemInst* container, uint8 c_type, uint32 some_id, uint32 char_id, DBTradeskillRecipe_Struct *spec);
+	bool	GetTradeRecipe(const EQEmu::ItemInstance* container, uint8 c_type, uint32 some_id, uint32 char_id, DBTradeskillRecipe_Struct *spec);
 	bool	GetTradeRecipe(uint32 recipe_id, uint8 c_type, uint32 some_id, uint32 char_id, DBTradeskillRecipe_Struct *spec);
 	uint32	GetZoneForage(uint32 ZoneID, uint8 skill); /* for foraging */
 	uint32	GetZoneFishing(uint32 ZoneID, uint8 skill, uint32 &npc_id, uint8 &npc_chance);
@@ -441,7 +469,7 @@ public:
 	/* Doors   */
 	bool	DoorIsOpen(uint8 door_id,const char* zone_name);
 	void	SetDoorPlace(uint8 value,uint8 door_id,const char* zone_name);
-	bool	LoadDoors(int32 iDoorCount, Door *into, const char *zone_name, int16 version);
+	bool	LoadDoors(int32 door_count, Door *into, const char *zone_name, int16 version);
 	bool	CheckGuildDoor(uint8 doorid,uint16 guild_id, const char* zone);
 	bool	SetGuildDoor(uint8 doorid,uint16 guild_id, const char* zone);
 	uint32	GetGuildEQID(uint32 guilddbid);
@@ -449,7 +477,7 @@ public:
 	int32	GetDoorsCount(uint32* oMaxID, const char *zone_name, int16 version);
 	int32	GetDoorsCountPlusOne(const char *zone_name, int16 version);
 	int32	GetDoorsDBCountPlusOne(const char *zone_name, int16 version);
-	void	InsertDoor(uint32 did, uint16 ddoorid, const char* ddoor_name, const glm::vec4& position, uint8 dopentype, uint16 dguildid, uint32 dlockpick, uint32 dkeyitem, uint8 ddoor_param, uint8 dinvert, int dincline, uint16 dsize);
+	void	InsertDoor(uint32 did, uint16 ddoorid, const char* ddoor_name, const glm::vec4& position, uint8 dopentype, uint16 dguildid, uint32 dlockpick, uint32 dkeyitem, uint8 ddoor_param, uint8 dinvert, int dincline, uint16 dsize, bool ddisabletimer = false);
 
 	/* Blocked Spells   */
 	int32	GetBlockedSpellsCount(uint32 zoneid);
@@ -457,7 +485,7 @@ public:
 
 	/* Traps   */
 	bool	LoadTraps(const char* zonename, int16 version);
-	char*	GetTrapMessage(uint32 trap_id);
+	bool	SetTrapData(Trap* trap, bool repopnow = false);
 
 	/* Time   */
 	uint32	GetZoneTZ(uint32 zoneid, uint32 version);
@@ -502,10 +530,9 @@ protected:
 
 	uint32				max_faction;
 	Faction**			faction_array;
-	uint32 npc_spells_maxid;
 	uint32 npc_spellseffects_maxid;
-	DBnpcspells_Struct** npc_spells_cache;
-	bool*				npc_spells_loadtried;
+	std::unordered_map<uint32, DBnpcspells_Struct> npc_spells_cache;
+	std::unordered_set<uint32> npc_spells_loadtried;
 	DBnpcspellseffects_Struct** npc_spellseffects_cache;
 	bool*				npc_spellseffects_loadtried;
 	uint8 door_isopen_array[255];

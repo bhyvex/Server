@@ -4,6 +4,9 @@
 #include "../common/types.h"
 #include "../common/packet_functions.h"
 #include "../common/eq_packet_structs.h"
+#include "../net/packet.h"
+#include <cereal/cereal.hpp>
+#include <cereal/types/string.hpp>
 
 #define SERVER_TIMEOUT	45000	// how often keepalive gets sent
 #define INTERSERVER_TIMER					10000
@@ -59,7 +62,7 @@
 #define ServerOP_ItemStatus			0x002C
 #define ServerOP_OOCMute			0x002D
 #define ServerOP_Revoke				0x002E
-//#define			0x002F
+#define	ServerOP_WebInterfaceCall   0x002F
 #define ServerOP_GroupIDReq			0x0030
 #define ServerOP_GroupIDReply		0x0031
 #define ServerOP_GroupLeave			0x0032	// for disbanding out of zone folks
@@ -85,6 +88,9 @@
 #define ServerOP_DepopPlayerCorpse	0x0065
 #define ServerOP_RequestTellQueue	0x0066 // client asks for it's tell queues
 #define ServerOP_ChangeSharedMem	0x0067
+#define	ServerOP_WebInterfaceEvent  0x0068
+#define ServerOP_WebInterfaceSubscribe 0x0069
+#define ServerOP_WebInterfaceUnsubscribe 0x0070
 
 #define ServerOP_RaidAdd			0x0100 //in use
 #define ServerOP_RaidRemove			0x0101 //in use
@@ -183,6 +189,9 @@
 #define ServerOP_ReloadWorld 0x4009
 #define ServerOP_ReloadLogs 0x4010
 #define ServerOP_ReloadPerlExportSettings	0x4011
+#define ServerOP_CZSetEntityVariableByClientName 0x4012
+#define ServerOP_UCSServerStatusRequest		0x4013
+#define ServerOP_UCSServerStatusReply		0x4014
 /* Query Server OP Codes */
 #define ServerOP_QSPlayerLogTrades					0x5010
 #define ServerOP_QSPlayerLogHandins					0x5011
@@ -221,6 +230,22 @@ public:
 		_wpos = 0;
 		_rpos = 0;
 	}
+
+	ServerPacket(uint16 in_opcode, const EQ::Net::Packet &p) {
+		this->compressed = false;
+		size = (uint32)p.Length();
+		opcode = in_opcode;
+		if (size == 0) {
+			pBuffer = 0;
+		}
+		else {
+			pBuffer = new uchar[size];
+			memcpy(pBuffer, p.Data(), size);
+		}
+		_wpos = 0;
+		_rpos = 0;
+	}
+
 	ServerPacket* Copy() {
 		if (this == 0) {
 			return 0;
@@ -231,43 +256,6 @@ public:
 		ret->compressed = this->compressed;
 		ret->InflatedSize = this->InflatedSize;
 		return ret;
-	}
-	bool Deflate() {
-		if (compressed)
-			return false;
-		if ((!this->pBuffer) || (!this->size))
-			return false;
-		uchar* tmp = new uchar[this->size + 128];
-		uint32 tmpsize = DeflatePacket(this->pBuffer, this->size, tmp, this->size + 128);
-		if (!tmpsize) {
-			safe_delete_array(tmp);
-			return false;
-		}
-		this->compressed = true;
-		this->InflatedSize = this->size;
-		this->size = tmpsize;
-		uchar* tmpdel = this->pBuffer;
-		this->pBuffer = tmp;
-		safe_delete_array(tmpdel);
-		return true;
-	}
-	bool Inflate() {
-		if (!compressed)
-			return false;
-		if ((!this->pBuffer) || (!this->size))
-			return false;
-		uchar* tmp = new uchar[InflatedSize];
-		uint32 tmpsize = InflatePacket(this->pBuffer, this->size, tmp, InflatedSize);
-		if (!tmpsize) {
-			safe_delete_array(tmp);
-			return false;
-		}
-		compressed = false;
-		this->size = tmpsize;
-		uchar* tmpdel = this->pBuffer;
-		this->pBuffer = tmp;
-		safe_delete_array(tmpdel);
-		return true;
 	}
 
 	void WriteUInt8(uint8 value) { *(uint8 *)(pBuffer + _wpos) = value; _wpos += sizeof(uint8); }
@@ -524,14 +512,21 @@ struct ServerLSPlayerZoneChange_Struct {
 	uint32 from; // 0 = world
 	uint32 to; // 0 = world
 };
+
 struct ClientAuth_Struct {
-	uint32	lsaccount_id;	// ID# in login server's db
-	char	name[30];		// username in login server's db
-	char	key[30];		// the Key the client will present
-	uint8	lsadmin;		// login server admin level
-	int16	worldadmin;		// login's suggested worldadmin level setting for this user, up to the world if they want to obey it
-	uint32	ip;
-	uint8	local;			// 1 if the client is from the local network
+	uint32 lsaccount_id; // ID# in login server's db
+	char name[30]; // username in login server's db
+	char key[30]; // the Key the client will present
+	uint8 lsadmin; // login server admin level
+	int16 worldadmin; // login's suggested worldadmin level setting for this user, up to the world if they want to obey it
+	uint32 ip;
+	uint8 local; // 1 if the client is from the local network
+
+	template <class Archive>
+	void serialize(Archive &ar)
+	{
+		ar(lsaccount_id, name, key, lsadmin, worldadmin, ip, local);
+	}
 };
 
 struct ServerSystemwideMessage {
@@ -663,6 +658,7 @@ struct UsertoWorldRequest_Struct {
 	uint32	worldid;
 	uint32	FromID;
 	uint32	ToID;
+	char	IPAddr[64];
 };
 
 struct UsertoWorldResponse_Struct {
@@ -1270,12 +1266,29 @@ struct CZSetEntVarByNPCTypeID_Struct {
 	char m_var[256];
 };
 
+struct CZSetEntVarByClientName_Struct {
+	char CharName[64];
+	char id[256];
+	char m_var[256];
+};
+
 struct ReloadWorld_Struct{
 	uint32 Option;
 };
 
 struct ServerRequestTellQueue_Struct {
 	char	name[64];
+};
+
+struct UCSServerStatus_Struct {
+	uint8 available; // non-zero=true, 0=false
+	union {
+		struct {
+			uint16 port;
+			uint16 unused;
+		};
+		uint32 timestamp;
+	};
 };
 
 #pragma pack()

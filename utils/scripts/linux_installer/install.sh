@@ -87,6 +87,7 @@ echo "mysql_eqemu_password:$eqemu_db_password" >> install_variables.txt
 
 if [[ "$OS" == "Debian" ]]; then
 	# Install pre-req packages
+	apt-get -y update
 	apt-get $apt_options install bash
 	apt-get $apt_options install build-essential
 	apt-get $apt_options install cmake
@@ -105,15 +106,30 @@ if [[ "$OS" == "Debian" ]]; then
 	apt-get $apt_options install libperl-dev
 	apt-get $apt_options install libperl5i-perl
 	apt-get $apt_options install libwtdbomysql-dev
+	apt-get $apt_options install libmysqlclient-dev
+	apt-get $apt_options install minizip
 	apt-get $apt_options install lua5.1
 	apt-get $apt_options install make
 	apt-get $apt_options install mariadb-client
 	apt-get $apt_options install open-vm-tools
 	apt-get $apt_options install unzip
 	apt-get $apt_options install uuid-dev
+	apt-get $apt_options install wget
 	apt-get $apt_options install zlib-bin
 	apt-get $apt_options install zlibc
-
+	apt-get $apt_options install libsodium-dev
+	apt-get $apt_options install libsodium18
+	apt-get $apt_options install libjson-perl
+	apt-get $apt_options install libssl-dev
+	
+	# Install libsodium
+	wget http://ftp.us.debian.org/debian/pool/main/libs/libsodium/libsodium-dev_1.0.11-1~bpo8+1_amd64.deb -O /home/eqemu/libsodium-dev.deb
+	wget http://ftp.us.debian.org/debian/pool/main/libs/libsodium/libsodium18_1.0.11-1~bpo8+1_amd64.deb -O /home/eqemu/libsodium18.deb
+	dpkg -i /home/eqemu/libsodium*.deb
+	# Cleanup after ourselves
+	rm -f /home/eqemu/libsodium-dev.deb
+	rm -f /home/eqemu/libsodium18.deb
+	
 	#::: Install FTP for remote FTP access
 	echo "proftpd-basic shared/proftpd/inetd_or_standalone select standalone" | debconf-set-selections
 	apt-get -y -q install proftpd
@@ -141,13 +157,40 @@ EOF
 	# Install prereqs
 	yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
 	yum -y install deltarpm
-	yum -y install open-vm-tools vim cmake boost-* zlib-devel mariadb-server mariadb-client mariadb-devel mariadb-libs mariadb-compat perl-* lua* dos2unix php-mysql proftpd
+	yum -y install open-vm-tools vim cmake boost-* zlib-devel mariadb-server mariadb-client mariadb-devel mariadb-libs mariadb-compat perl-* lua* dos2unix php-mysql proftpd libuuid-devel
 	yum -y groupinstall "Development Tools" "Basic Web Server" "Compatibility Libraries"
 
 elif [[ "$OS" == "fedora_core" ]]; then
 	# Do Fedora stuff
-	dnf -y install open-vm-tools vim cmake boost-devel zlib-devel mariadb-server mariadb-devel mariadb-libs perl perl-DBD-MySQL perl-IO-stringy perl-devel lua-devel lua-sql-mysql dos2unix php-mysql proftpd wget compat-lua-libs compat-lua-devel compat-lua perl-Time-HiRes
-	dnf -y groupinstall "Development Tools" "Basic Web Server" "C Development Tools and Libraries"
+	dnf -y install open-vm-tools
+	dnf -y install vim
+	dnf -y install cmake
+	dnf -y install boost-devel
+	dnf -y install zlib-devel
+	dnf -y install mariadb-server
+	dnf -y install mariadb-devel
+	dnf -y install mariadb-libs
+	dnf -y install perl
+	dnf -y install perl-DBD-MySQL
+	dnf -y install perl-IO-stringy
+	dnf -y install perl-devel
+	dnf -y install lua-devel
+	dnf -y install lua-sql-mysql
+	dnf -y install dos2unix
+	dnf -y install php-mysql
+	dnf -y install php-mysqlnd
+	dnf -y install proftpd
+	dnf -y install wget
+	dnf -y install compat-lua-libs
+	dnf -y install compat-lua-devel
+	dnf -y install compat-lua
+	dnf -y install perl-Time-HiRes
+	dnf -y install libuuid-devel
+	dnf -y install libsodium
+	dnf -y install libsodium-devel
+	dnf -y groupinstall "Development Tools"
+	dnf -y groupinstall "Basic Web Server"
+	dnf -y groupinstall "C Development Tools and Libraries"
 fi
 
 if [[ "$OS" == "fedora_core" ]] || [[ "$OS" == "red_hat" ]]; then

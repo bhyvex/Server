@@ -1,5 +1,6 @@
 #include "../common/global_define.h"
 #include "../common/misc_functions.h"
+#include "../common/compression.h"
 
 #include "map.h"
 #include "raycast_mesh.h"
@@ -10,83 +11,6 @@
 #include <memory>
 #include <tuple>
 #include <vector>
-#include <zlib.h>
-
-
-uint32 EstimateDeflateBuffer(uint32_t len) {
-	z_stream zstream;
-	memset(&zstream, 0, sizeof(zstream));
-	
-	zstream.zalloc = Z_NULL;
-	zstream.zfree = Z_NULL;
-	zstream.opaque = Z_NULL;
-	if (deflateInit(&zstream, Z_FINISH) != Z_OK)
-		return 0;
-
-	return deflateBound(&zstream, len);
-}
-
-uint32_t DeflateData(const char *buffer, uint32_t len, char *out_buffer, uint32_t out_len_max) {
-	z_stream zstream;
-	memset(&zstream, 0, sizeof(zstream));
-	int zerror;
-
-	zstream.next_in = const_cast<unsigned char*>(reinterpret_cast<const unsigned char*>(buffer));
-	zstream.avail_in = len;
-	zstream.zalloc = Z_NULL;
-	zstream.zfree = Z_NULL;
-	zstream.opaque = Z_NULL;
-	deflateInit(&zstream, Z_FINISH);
-
-	zstream.next_out = reinterpret_cast<unsigned char*>(out_buffer);
-	zstream.avail_out = out_len_max;
-	zerror = deflate(&zstream, Z_FINISH);
-
-	if (zerror == Z_STREAM_END)
-	{
-		deflateEnd(&zstream);
-		return (uint32_t)zstream.total_out;
-	}
-	else
-	{
-		zerror = deflateEnd(&zstream);
-		return 0;
-	}
-}
-
-uint32 InflateData(const char* buffer, uint32 len, char* out_buffer, uint32 out_len_max) {
-	z_stream zstream;
-	int zerror = 0;
-	int i;
-
-	zstream.next_in = const_cast<unsigned char*>(reinterpret_cast<const unsigned char*>(buffer));
-	zstream.avail_in = len;
-	zstream.next_out = reinterpret_cast<unsigned char*>(out_buffer);;
-	zstream.avail_out = out_len_max;
-	zstream.zalloc = Z_NULL;
-	zstream.zfree = Z_NULL;
-	zstream.opaque = Z_NULL;
-
-	i = inflateInit2(&zstream, 15);
-	if (i != Z_OK) {
-		return 0;
-	}
-
-	zerror = inflate(&zstream, Z_FINISH);
-	if (zerror == Z_STREAM_END) {
-		inflateEnd(&zstream);
-		return zstream.total_out;
-	}
-	else {
-		if (zerror == -4 && zstream.msg == 0)
-		{
-			return 0;
-		}
-
-		zerror = inflateEnd(&zstream);
-		return 0;
-	}
-}
 
 struct Map::impl
 {
@@ -268,11 +192,38 @@ bool Map::CheckLoS(glm::vec3 myloc, glm::vec3 oloc) const {
 	return !imp->rm->raycast((const RmReal*)&myloc, (const RmReal*)&oloc, nullptr, nullptr, nullptr);
 }
 
+// returns true if a collision happens
+bool Map::DoCollisionCheck(glm::vec3 myloc, glm::vec3 oloc, glm::vec3 &outnorm, float &distance) const {
+	if(!imp)
+		return false;
+
+	return imp->rm->raycast((const RmReal*)&myloc, (const RmReal*)&oloc, nullptr, (RmReal *)&outnorm, (RmReal *)&distance);
+}
+
+inline bool file_exists(const std::string& name) {
+	std::ifstream f(name.c_str());
+	return f.good();
+}
+
 Map *Map::LoadMapFile(std::string file) {
-	std::string filename = Config->MapDir;
+
+	std::string filename = "";
+	if (file_exists("maps")) {
+		filename = "maps";
+	}
+	else if (file_exists("Maps")) {
+		filename = "Maps";
+	}
+	else {
+		filename = Config->MapDir;
+	}
+
 	std::transform(file.begin(), file.end(), file.begin(), ::tolower);
+	filename += "/base/";
 	filename += file;
 	filename += ".map";
+
+	Log(Logs::General, Logs::Status, "Attempting to load Map File '%s'", filename.c_str());
 
 	auto m = new Map();
 	if (m->Load(filename)) {
@@ -287,7 +238,7 @@ Map *Map::LoadMapFile(std::string file) {
 bool Map::Load(std::string filename, bool force_mmf_overwrite)
 {
 	if (LoadMMF(filename, force_mmf_overwrite)) {
-		Log.Out(Logs::General, Logs::Zone_Server, "Zone map mmf found - using it in lieu of '%s'", filename.c_str());
+		Log(Logs::General, Logs::Status, "Loaded .MMF Map File in place of '%s'", filename.c_str());
 		return true;
 	}
 #else
@@ -304,6 +255,7 @@ bool Map::Load(std::string filename)
 		}
 		
 		if(version == 0x01000000) {
+			Log(Logs::General, Logs::Status, "Loaded V1 Map File '%s'", filename.c_str());
 			bool v = LoadV1(f);
 			fclose(f);
 
@@ -314,6 +266,7 @@ bool Map::Load(std::string filename)
 
 			return v;
 		} else if(version == 0x02000000) {
+			Log(Logs::General, Logs::Status, "Loaded V2 Map File '%s'", filename.c_str());
 			bool v = LoadV2(f);
 			fclose(f);
 
@@ -431,7 +384,7 @@ bool Map::LoadV2(FILE *f) {
 
 	std::vector<char> buffer;
 	buffer.resize(buffer_size);
-	uint32 v = InflateData(&data[0], data_size, &buffer[0], buffer_size);
+	uint32 v = EQEmu::InflateData(&data[0], data_size, &buffer[0], buffer_size);
 
 	char *buf = &buffer[0];
 	uint32 vert_count;
@@ -990,53 +943,53 @@ bool Map::LoadMMF(const std::string& map_file_name, bool force_mmf_overwrite)
 	std::string mmf_file_name = map_file_name;
 	strip_map_extension(mmf_file_name);
 	if (!add_mmf_extension(mmf_file_name)) {
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s'", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s'", mmf_file_name.c_str());
 		return false;
 	}
 
 	FILE *f = fopen(mmf_file_name.c_str(), "rb");
 	if (!f) {
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - could not open file", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - could not open file", mmf_file_name.c_str());
 		return false;
 	}
 
 	uint32 file_version;
 	if (fread(&file_version, sizeof(uint32), 1, f) != 1) {
 		fclose(f);
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@file_version", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@file_version", mmf_file_name.c_str());
 		return false;
 	}
 	
 	uint32 rm_buffer_size;
 	if (fread(&rm_buffer_size, sizeof(uint32), 1, f) != 1) {
 		fclose(f);
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@rm_buffer_size", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@rm_buffer_size", mmf_file_name.c_str());
 		return false;
 	}
 
 	uint32 rm_buffer_crc32;
 	if (fread(&rm_buffer_crc32, sizeof(uint32), 1, f) != 1) {
 		fclose(f);
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@rm_buffer_crc32", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@rm_buffer_crc32", mmf_file_name.c_str());
 		return false;
 	}
 	if (rm_buffer_crc32 != /*crc32_check*/ 0) {
 		fclose(f);
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - bad rm_buffer checksum", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - bad rm_buffer checksum", mmf_file_name.c_str());
 		return false;
 	}
 
 	uint32 mmf_buffer_size;
 	if (fread(&mmf_buffer_size, sizeof(uint32), 1, f) != 1) {
 		fclose(f);
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@mmf_buffer_size", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@mmf_buffer_size", mmf_file_name.c_str());
 		return false;
 	}
 
 	std::vector<char> mmf_buffer(mmf_buffer_size);
 	if (fread(mmf_buffer.data(), mmf_buffer_size, 1, f) != 1) {
 		fclose(f);
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@mmf_buffer", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - f@mmf_buffer", mmf_file_name.c_str());
 		return false;
 	}
 	
@@ -1063,7 +1016,7 @@ bool Map::LoadMMF(const std::string& map_file_name, bool force_mmf_overwrite)
 	if (!imp->rm) {
 		delete imp;
 		imp = nullptr;
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - null RaycastMesh", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to load Map MMF file: '%s' - null RaycastMesh", mmf_file_name.c_str());
 		return false;
 	}
 
@@ -1073,14 +1026,14 @@ bool Map::LoadMMF(const std::string& map_file_name, bool force_mmf_overwrite)
 bool Map::SaveMMF(const std::string& map_file_name, bool force_mmf_overwrite)
 {
 	if (!imp || !imp->rm) {
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file - No implementation (map_file_name: '%s')", map_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file - No implementation (map_file_name: '%s')", map_file_name.c_str());
 		return false;
 	}
 
 	std::string mmf_file_name = map_file_name;
 	strip_map_extension(mmf_file_name);
 	if (!add_mmf_extension(mmf_file_name)) {
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s'", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s'", mmf_file_name.c_str());
 		return false;
 	}
 	
@@ -1094,7 +1047,7 @@ bool Map::SaveMMF(const std::string& map_file_name, bool force_mmf_overwrite)
 	std::vector<char> rm_buffer; // size set in MyRaycastMesh::serialize()
 	serializeRaycastMesh(imp->rm, rm_buffer);
 	if (rm_buffer.empty()) {
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - empty RaycastMesh buffer", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - empty RaycastMesh buffer", mmf_file_name.c_str());
 		return false;
 	}
 
@@ -1105,13 +1058,13 @@ bool Map::SaveMMF(const std::string& map_file_name, bool force_mmf_overwrite)
 	
 	mmf_buffer_size = DeflateData(rm_buffer.data(), rm_buffer.size(), mmf_buffer.data(), mmf_buffer.size());
 	if (!mmf_buffer_size) {
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - null MMF buffer size", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - null MMF buffer size", mmf_file_name.c_str());
 		return false;
 	}
 	
 	f = fopen(mmf_file_name.c_str(), "wb");
 	if (!f) {
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - could not open file", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - could not open file", mmf_file_name.c_str());
 		return false;
 	}
 	
@@ -1119,14 +1072,14 @@ bool Map::SaveMMF(const std::string& map_file_name, bool force_mmf_overwrite)
 	if (fwrite(&file_version, sizeof(uint32), 1, f) != 1) {
 		fclose(f);
 		std::remove(mmf_file_name.c_str());
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@file_version", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@file_version", mmf_file_name.c_str());
 		return false;
 	}
 	
 	if (fwrite(&rm_buffer_size, sizeof(uint32), 1, f) != 1) {
 		fclose(f);
 		std::remove(mmf_file_name.c_str());
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@rm_buffer_size", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@rm_buffer_size", mmf_file_name.c_str());
 		return false;
 	}
 
@@ -1134,21 +1087,21 @@ bool Map::SaveMMF(const std::string& map_file_name, bool force_mmf_overwrite)
 	if (fwrite(&rm_buffer_crc32, sizeof(uint32), 1, f) != 1) {
 		fclose(f);
 		std::remove(mmf_file_name.c_str());
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@rm_buffer_crc32", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@rm_buffer_crc32", mmf_file_name.c_str());
 		return false;
 	}
 
 	if (fwrite(&mmf_buffer_size, sizeof(uint32), 1, f) != 1) {
 		fclose(f);
 		std::remove(mmf_file_name.c_str());
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@mmf_buffer_size", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@mmf_buffer_size", mmf_file_name.c_str());
 		return false;
 	}
 	
 	if (fwrite(mmf_buffer.data(), mmf_buffer_size, 1, f) != 1) {
 		fclose(f);
 		std::remove(mmf_file_name.c_str());
-		Log.Out(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@mmf_buffer", mmf_file_name.c_str());
+		Log(Logs::General, Logs::Zone_Server, "Failed to save Map MMF file: '%s' - f@mmf_buffer", mmf_file_name.c_str());
 		return false;
 	}
 

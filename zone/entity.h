@@ -79,6 +79,8 @@ public:
 	virtual bool IsTrap()			const { return false; }
 	virtual bool IsBeacon()			const { return false; }
 	virtual bool IsEncounter()		const { return false; }
+	virtual bool IsBot()            const { return false; }
+	virtual bool IsAura()			const { return false; }
 
 	virtual bool Process() { return false; }
 	virtual bool Save() { return true; }
@@ -113,7 +115,6 @@ public:
 	bool CheckCoordLosNoZLeaps(float cur_x, float cur_y, float cur_z, float trg_x, float trg_y, float trg_z, float perwalk=1);
 
 #ifdef BOTS
-	virtual bool IsBot() const { return false; }
 	Bot* CastToBot();
 #endif
 
@@ -243,6 +244,7 @@ public:
 	void	AddArea(int id, int type, float min_x, float max_x, float min_y, float max_y, float min_z, float max_z);
 	void	RemoveArea(int id);
 	void	ClearAreas();
+	void	ReloadMerchants();
 	void	ProcessProximitySay(const char *Message, Client *c, uint8 language = 0);
 	void	SendAATimer(uint32 charid,UseAA_Struct* uaa);
 	Doors *FindDoor(uint8 door_id);
@@ -279,6 +281,7 @@ public:
 	bool	RemoveTrap(uint16 delete_id);
 	bool	RemoveObject(uint16 delete_id);
 	bool	RemoveProximity(uint16 delete_npc_id);
+	bool	RemoveMobFromClientCloseLists(Mob *mob);
 	void	RemoveAllMobs();
 	void	RemoveAllClients();
 	void	RemoveAllNPCs();
@@ -292,6 +295,7 @@ public:
 	void	RemoveAllObjects();
 	void	RemoveAllLocalities();
 	void	RemoveAllRaids();
+	void	RemoveAllEncounters();
 	void	DestroyTempPets(Mob *owner);
 	int16	CountTempPets(Mob *owner);
 	void	AddTempPetsToHateList(Mob *owner, Mob* other, bool bFrenzy = false);
@@ -313,6 +317,7 @@ public:
 	void	Message(uint32 to_guilddbid, uint32 type, const char* message, ...);
 	void	MessageStatus(uint32 to_guilddbid, int to_minstatus, uint32 type, const char* message, ...);
 	void	MessageClose(Mob* sender, bool skipsender, float dist, uint32 type, const char* message, ...);
+	void	FilteredMessageClose(Mob* sender, bool skipsender, float dist, uint32 type, eqFilterType filter, const char* message, ...);
 	void	Message_StringID(Mob *sender, bool skipsender, uint32 type, uint32 string_id, const char* message1=0,const char* message2=0,const char* message3=0,const char* message4=0,const char* message5=0,const char* message6=0,const char* message7=0,const char* message8=0,const char* message9=0);
 	void	FilteredMessage_StringID(Mob *sender, bool skipsender, uint32 type, eqFilterType filter, uint32 string_id, const char* message1=0,const char* message2=0,const char* message3=0,const char* message4=0,const char* message5=0,const char* message6=0,const char* message7=0,const char* message8=0,const char* message9=0);
 	void	MessageClose_StringID(Mob *sender, bool skipsender, float dist, uint32 type, uint32 string_id, const char* message1=0,const char* message2=0,const char* message3=0,const char* message4=0,const char* message5=0,const char* message6=0,const char* message7=0,const char* message8=0,const char* message9=0);
@@ -348,26 +353,26 @@ public:
 	void	QueueClientsByTarget(Mob* sender, const EQApplicationPacket* app, bool iSendToSender = true, Mob* SkipThisMob = 0, bool ackreq = true,
 						bool HoTT = true, uint32 ClientVersionBits = 0xFFFFFFFF, bool inspect_buffs = false);
 
-	void	QueueClientsByXTarget(Mob* sender, const EQApplicationPacket* app, bool iSendToSender = true);
+	void	QueueClientsByXTarget(Mob* sender, const EQApplicationPacket* app, bool iSendToSender = true, EQEmu::versions::ClientVersionBit client_version_bits = EQEmu::versions::ClientVersionBit::bit_AllClients);
 	void	QueueToGroupsForNPCHealthAA(Mob* sender, const EQApplicationPacket* app);
 	void	QueueManaged(Mob* sender, const EQApplicationPacket* app, bool ignore_sender=false, bool ackreq = true);
 
-	void	AEAttack(Mob *attacker, float dist, int Hand = EQEmu::legacy::SlotPrimary, int count = 0, bool IsFromSpell = false);
+	void	AEAttack(Mob *attacker, float dist, int Hand = EQEmu::invslot::slotPrimary, int count = 0, bool IsFromSpell = false);
 	void	AETaunt(Client *caster, float range=0, int32 bonus_hate=0);
-	void	AESpell(Mob *caster, Mob *center, uint16 spell_id, bool affect_caster = true, int16 resist_adjust = 0);
+	void	AESpell(Mob *caster, Mob *center, uint16 spell_id, bool affect_caster = true, int16 resist_adjust = 0, int *max_targets = nullptr);
 	void	MassGroupBuff(Mob *caster, Mob *center, uint16 spell_id, bool affect_caster = true);
 	void	AEBardPulse(Mob *caster, Mob *center, uint16 spell_id, bool affect_caster = true);
 
 	//trap stuff
 	Mob*	GetTrapTrigger(Trap* trap);
 	void	SendAlarm(Trap* trap, Mob* currenttarget, uint8 kos);
-	Trap*	FindNearbyTrap(Mob* searcher, float max_dist);
+	Trap*	FindNearbyTrap(Mob* searcher, float max_dist, float &curdist, bool detected = false);
 
 	void	AddHealAggro(Mob* target, Mob* caster, uint16 hate);
 	Mob*	FindDefenseNPC(uint32 npcid);
 	void	OpenDoorsNear(NPC* opener);
 	void	UpdateWho(bool iSendFullUpdate = false);
-	void	SendPositionUpdates(Client* client, uint32 cLastUpdate = 0, float range = 0, Entity* alwayssend = 0, bool iSendEvenIfNotChanged = false);
+	void	SendPositionUpdates(Client* client, uint32 cLastUpdate = 0, float update_range = 0, Entity* always_send = 0, bool iSendEvenIfNotChanged = false);
 	char*	MakeNameUnique(char* name);
 	static char* RemoveNumbers(char* name);
 	void	SignalMobsByNPCID(uint32 npc_type, int signal_id);
@@ -380,9 +385,9 @@ public:
 	void	ListNPCs(Client* client, const char* arg1 = 0, const char* arg2 = 0, uint8 searchtype = 0);
 	void	ListNPCCorpses(Client* client);
 	void	ListPlayerCorpses(Client* client);
-	void	FindPathsToAllNPCs();
 	int32	DeleteNPCCorpses();
 	int32	DeletePlayerCorpses();
+	void	CorpseFix(Client* c);
 	void	WriteEntityIDs();
 	void	HalveAggro(Mob* who);
 	void	DoubleAggro(Mob* who);
@@ -410,10 +415,10 @@ public:
 	bool	LimitCheckName(const char* npc_name);
 
 	void	CheckClientAggro(Client *around);
-	Mob*	AICheckCloseAggro(Mob* sender, float iAggroRange, float iAssistRange);
+	Mob*	AICheckNPCtoNPCAggro(Mob* sender, float iAggroRange, float iAssistRange);
 	int	GetHatedCount(Mob *attacker, Mob *exclude);
 	void	AIYellForHelp(Mob* sender, Mob* attacker);
-	bool	AICheckCloseBeneficialSpells(NPC* caster, uint8 iChance, float iRange, uint16 iSpellTypes);
+	bool	AICheckCloseBeneficialSpells(NPC* caster, uint8 iChance, float iRange, uint32 iSpellTypes);
 	bool	Merc_AICheckCloseBeneficialSpells(Merc* caster, uint8 iChance, float iRange, uint32 iSpellTypes);
 	Mob*	GetTargetForMez(Mob* caster);
 	uint32	CheckNPCsClose(Mob *center);
@@ -451,7 +456,15 @@ public:
 	void GetObjectList(std::list<Object*> &o_list);
 	void GetDoorsList(std::list<Doors*> &d_list);
 	void GetSpawnList(std::list<Spawn2*> &d_list);
-	void GetTargetsForConeArea(Mob *start, float min_radius, float radius, float height, std::list<Mob*> &m_list);
+	void GetTargetsForConeArea(Mob *start, float min_radius, float radius, float height, int pcnpc, std::list<Mob*> &m_list);
+
+	inline const std::unordered_map<uint16, Mob *> &GetMobList() { return mob_list; }
+	inline const std::unordered_map<uint16, NPC *> &GetNPCList() { return npc_list; }
+	inline const std::unordered_map<uint16, Merc *> &GetMercList() { return merc_list; }
+	inline const std::unordered_map<uint16, Client *> &GetClientList() { return client_list; }
+	inline const std::unordered_map<uint16, Corpse *> &GetCorpseList() { return corpse_list; }
+	inline const std::unordered_map<uint16, Object *> &GetObjectList() { return object_list; }
+	inline const std::unordered_map<uint16, Doors *> &GetDoorsList() { return door_list; }
 
 	void	DepopAll(int NPCTypeID, bool StartSpawnTimer = true);
 
@@ -460,6 +473,10 @@ public:
 	void RefreshClientXTargets(Client *c);
 	void SendAlternateAdvancementStats();
 
+	void GetTrapInfo(Client* client);
+	bool IsTrapGroupSpawned(uint32 trap_id, uint8 group);
+	void UpdateAllTraps(bool respawn, bool repopnow = false);
+	void ClearTrapPointers();
 protected:
 	friend class Zone;
 	void	Depop(bool StartSpawnTimer = false);
@@ -502,7 +519,7 @@ private:
 		Bot* GetBotByBotName(std::string botName);
 		std::list<Bot*> GetBotsByBotOwnerCharacterID(uint32 botOwnerCharacterID);
 
-		bool Bot_AICheckCloseBeneficialSpells(Bot* caster, uint8 iChance, float iRange, uint16 iSpellTypes); // TODO: Evaluate this closesly in hopes to eliminate
+		bool Bot_AICheckCloseBeneficialSpells(Bot* caster, uint8 iChance, float iRange, uint32 iSpellTypes); // TODO: Evaluate this closesly in hopes to eliminate
 		void ShowSpawnWindow(Client* client, int Distance, bool NamedOnly); // TODO: Implement ShowSpawnWindow in the bot class but it needs entity list stuff
 	private:
 		std::list<Bot*> bot_list;

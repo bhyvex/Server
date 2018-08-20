@@ -354,6 +354,31 @@
 9098|2016_08_26_object_size_tilt.sql|SHOW COLUMNS FROM `object` LIKE 'size'|empty|
 9099|2016_08_27_ip_exemptions.sql|SHOW TABLES LIKE 'ip_exemptions'|empty|
 9100|2016_08_27_object_display_name.sql|SHOW COLUMNS FROM `object` LIKE 'display_name'|empty|
+9101|2016_12_01_pcnpc_only.sql|SHOW COLUMNS FROM `spells_new` LIKE 'pcnpc_only_flag'|empty|
+9102|2017_01_10_book_languages.sql|SHOW COLUMNS FROM `books` LIKE 'language'|empty|
+9103|2017_01_30_book_languages_fix.sql|SELECT `language` from `books` WHERE `language` IS NULL|not_empty|
+9104|2017_02_09_npc_spells_entries_type_update.sql|SHOW COLUMNS IN `npc_spells_entries` LIKE 'type'|contains|smallint(5) unsigned
+9105|2017_02_15_bot_spells_entries.sql|SELECT `id` FROM `npc_spells_entries` WHERE `npc_spells_id` >= 701 AND `npc_spells_id` <= 712|not_empty|
+9106|2017_02_26_npc_spells_update_for_bots.sql|SELECT * FROM `npc_spells` WHERE `id` = '701' AND `name` = 'Cleric Bot'|not_empty|
+9107|2017_03_09_inventory_version.sql|SHOW TABLES LIKE 'inventory_version'|empty|
+9108|2017_04_07_ignore_despawn.sql|SHOW COLUMNS FROM `npc_types` LIKE 'ignore_despawn'|empty|
+9109|2017_04_08_doors_disable_timer.sql|SHOW COLUMNS FROM `doors` LIKE 'disable_timer'|empty|
+9110|2017_04_10_graveyard.sql|show index from graveyard WHERE key_name = 'zone_id_nonunique'|empty|
+9111|2017_06_24_saylink_index.sql|SHOW INDEX FROM `saylink` WHERE `key_name` = 'phrase_index'|empty|
+9112|2017_06_24_rule_values_expand.sql|SHOW COLUMNS FROM rule_values WHERE Field = 'rule_value' and Type = 'varchar(30)'|empty|
+9113|2017_07_19_show_name.sql|SHOW COLUMNS FROM `npc_types` LIKE 'show_name'|empty|
+9114|2017_07_22_aura.sql|SHOW TABLES LIKE 'auras'|empty|
+9115|2017_10_28_traps.sql|SHOW COLUMNS FROM `traps` LIKE 'triggered_number'|empty|
+9116|2017_12_16_GroundSpawn_Respawn_Timer.sql|SHOW COLUMNS FROM `ground_spawns` WHERE Field = 'respawn_timer' AND Type = 'int(11) unsigned'|empty|
+9117|2018_02_01_NPC_Spells_Min_Max_HP.sql|SHOW COLUMNS FROM `npc_spells_entries` LIKE 'min_hp'|empty|
+9118|2018_02_04_Charm_Stats.sql|SHOW COLUMNS FROM `npc_types` LIKE 'charm_ac'|empty|
+9119|2018_02_10_GlobalLoot.sql|SHOW TABLES LIKE 'global_loot'|empty|
+9120|2018_02_13_Heading.sql|SELECT value FROM variables WHERE varname = 'fixed_heading'|empty|
+9121|2018_02_18_bug_reports.sql|SHOW TABLES LIKE 'bug_reports'|empty|
+9122|2018_03_07_ucs_command.sql|SELECT * FROM `command_settings` WHERE `command` LIKE 'ucs'|empty|
+9123|2018_07_07_data_buckets.sql|SHOW TABLES LIKE 'data_buckets'|empty|
+9124|2018_07_09_tasks.sql|SHOW COLUMNS FROM `tasks` LIKE 'type'|empty|
+9125|2018_07_20_task_emote.sql|SHOW COLUMNS FROM `tasks` LIKE 'completion_emote'|empty|
 
 # Upgrade conditions:
 # 	This won't be needed after this system is implemented, but it is used database that are not

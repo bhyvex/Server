@@ -244,8 +244,7 @@ bool IsBeneficialSpell(uint16 spell_id)
 			} else {
 				// If the resisttype is not magic and spell is Bind Sight or Cast Sight
 				// It's not beneficial
-				if (sai == SAI_Dispell_Sight && spells[spell_id].skill == 18 &&
-						!IsEffectInSpell(spell_id, SE_VoiceGraft))
+				if ((sai == SAI_Calm && IsEffectInSpell(spell_id, SE_Harmony)) || (sai == SAI_Calm_Song && IsEffectInSpell(spell_id, SE_BindSight)) || (sai == SAI_Dispell_Sight && spells[spell_id].skill == 18 && !IsEffectInSpell(spell_id, SE_VoiceGraft)))
 					return false;
 			}
 		}
@@ -409,8 +408,19 @@ bool IsPartialCapableSpell(uint16 spell_id)
 	if (spells[spell_id].no_partial_resist)
 		return false;
 
-	if (IsPureNukeSpell(spell_id))
-		return true;
+	// spell uses 600 (partial) scale if first effect is damage, else it uses 200 scale.
+	// this includes DoTs.  no_partial_resist excludes spells like necro snares
+	for (int o = 0; o < EFFECT_COUNT; o++) {
+		auto tid = spells[spell_id].effectid[o];
+
+		if (IsBlankSpellEffect(spell_id, o))
+			continue;
+
+		if ((tid == SE_CurrentHPOnce || tid == SE_CurrentHP) && spells[spell_id].base[o] < 0)
+			return true;
+
+		return false;
+	}
 
 	return false;
 }
@@ -840,7 +850,7 @@ DmgShieldType GetDamageShieldType(uint16 spell_id, int32 DSType)
 	// If we have a DamageShieldType for this spell from the damageshieldtypes table, return that,
 	// else, make a guess, based on the resist type. Default return value is DS_THORNS
 	if (IsValidSpell(spell_id)) {
-		Log.Out(Logs::Detail, Logs::Spells, "DamageShieldType for spell %i (%s) is %X\n", spell_id,
+		Log(Logs::Detail, Logs::Spells, "DamageShieldType for spell %i (%s) is %X\n", spell_id,
 			spells[spell_id].name, spells[spell_id].DamageShieldType);
 
 		if (spells[spell_id].DamageShieldType)
@@ -929,7 +939,7 @@ bool IsRegularSingleTargetHealSpell(uint16 spell_id)
 {
 	if(spells[spell_id].effectid[0] == 0 && spells[spell_id].base[0] > 0 &&
 			spells[spell_id].targettype == ST_Target && spells[spell_id].buffduration == 0 &&
-			!IsFastHealSpell(spell_id) && !IsCompleteHealSpell(spell_id) &&
+			!IsCompleteHealSpell(spell_id) &&
 			!IsHealOverTimeSpell(spell_id) && !IsGroupSpell(spell_id))
 		return true;
 

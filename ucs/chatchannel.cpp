@@ -28,6 +28,10 @@
 extern Database database;
 extern uint32 ChatMessagesSent;
 
+void ServerToClient45SayLink(std::string& clientSayLink, const std::string& serverSayLink);
+void ServerToClient50SayLink(std::string& clientSayLink, const std::string& serverSayLink);
+void ServerToClient55SayLink(std::string& clientSayLink, const std::string& serverSayLink);
+
 ChatChannel::ChatChannel(std::string inName, std::string inOwner, std::string inPassword, bool inPermanent, int inMinimumStatus) :
 	DeleteTimer(0) {
 
@@ -43,7 +47,7 @@ ChatChannel::ChatChannel(std::string inName, std::string inOwner, std::string in
 
 	Moderated = false;
 
-	Log.Out(Logs::Detail, Logs::UCS_Server, "New ChatChannel created: Name: [%s], Owner: [%s], Password: [%s], MinStatus: %i",
+	Log(Logs::Detail, Logs::UCS_Server, "New ChatChannel created: Name: [%s], Owner: [%s], Password: [%s], MinStatus: %i",
 					Name.c_str(), Owner.c_str(), Password.c_str(), MinimumStatus);
 
 }
@@ -150,7 +154,7 @@ void ChatChannelList::SendAllChannels(Client *c) {
 
 void ChatChannelList::RemoveChannel(ChatChannel *Channel) {
 
-	Log.Out(Logs::Detail, Logs::UCS_Server, "RemoveChannel(%s)", Channel->GetName().c_str());
+	Log(Logs::Detail, Logs::UCS_Server, "RemoveChannel(%s)", Channel->GetName().c_str());
 
 	LinkedListIterator<ChatChannel*> iterator(ChatChannels);
 
@@ -171,7 +175,7 @@ void ChatChannelList::RemoveChannel(ChatChannel *Channel) {
 
 void ChatChannelList::RemoveAllChannels() {
 
-	Log.Out(Logs::Detail, Logs::UCS_Server, "RemoveAllChannels");
+	Log(Logs::Detail, Logs::UCS_Server, "RemoveAllChannels");
 
 	LinkedListIterator<ChatChannel*> iterator(ChatChannels);
 
@@ -229,7 +233,7 @@ void ChatChannel::AddClient(Client *c) {
 
 	if(IsClientInChannel(c)) {
 
-		Log.Out(Logs::Detail, Logs::UCS_Server, "Client %s already in channel %s", c->GetName().c_str(), GetName().c_str());
+		Log(Logs::Detail, Logs::UCS_Server, "Client %s already in channel %s", c->GetName().c_str(), GetName().c_str());
 
 		return;
 	}
@@ -238,7 +242,7 @@ void ChatChannel::AddClient(Client *c) {
 
 	int AccountStatus = c->GetAccountStatus();
 
-	Log.Out(Logs::Detail, Logs::UCS_Server, "Adding %s to channel %s", c->GetName().c_str(), Name.c_str());
+	Log(Logs::Detail, Logs::UCS_Server, "Adding %s to channel %s", c->GetName().c_str(), Name.c_str());
 
 	LinkedListIterator<Client*> iterator(ClientsInChannel);
 
@@ -263,7 +267,7 @@ bool ChatChannel::RemoveClient(Client *c) {
 
 	if(!c) return false;
 
-	Log.Out(Logs::Detail, Logs::UCS_Server, "RemoveClient %s from channel %s", c->GetName().c_str(), GetName().c_str());
+	Log(Logs::Detail, Logs::UCS_Server, "RemoveClient %s from channel %s", c->GetName().c_str(), GetName().c_str());
 
 	bool HideMe = c->GetHideMe();
 
@@ -300,7 +304,7 @@ bool ChatChannel::RemoveClient(Client *c) {
 		if((Password.length() == 0) || (RuleI(Channels, DeleteTimer) == 0))
 			return false;
 
-		Log.Out(Logs::Detail, Logs::UCS_Server, "Starting delete timer for empty password protected channel %s", Name.c_str());
+		Log(Logs::Detail, Logs::UCS_Server, "Starting delete timer for empty password protected channel %s", Name.c_str());
 
 		DeleteTimer.Start(RuleI(Channels, DeleteTimer) * 60000);
 	}
@@ -384,6 +388,8 @@ void ChatChannel::SendMessageToChannel(std::string Message, Client* Sender) {
 
 	if(!Sender) return;
 
+	std::string cv_messages[EQEmu::versions::ClientVersionCount];
+
 	ChatMessagesSent++;
 
 	LinkedListIterator<Client*> iterator(ClientsInChannel);
@@ -396,9 +402,30 @@ void ChatChannel::SendMessageToChannel(std::string Message, Client* Sender) {
 
 		if(ChannelClient)
 		{
-			Log.Out(Logs::Detail, Logs::UCS_Server, "Sending message to %s from %s",
+			Log(Logs::Detail, Logs::UCS_Server, "Sending message to %s from %s",
 					ChannelClient->GetName().c_str(), Sender->GetName().c_str());
-			ChannelClient->SendChannelMessage(Name, Message, Sender);
+
+			if (cv_messages[static_cast<uint32>(ChannelClient->GetClientVersion())].length() == 0) {
+				switch (ChannelClient->GetClientVersion()) {
+				case EQEmu::versions::ClientVersion::Titanium:
+					ServerToClient45SayLink(cv_messages[static_cast<uint32>(ChannelClient->GetClientVersion())], Message);
+					break;
+				case EQEmu::versions::ClientVersion::SoF:
+				case EQEmu::versions::ClientVersion::SoD:
+				case EQEmu::versions::ClientVersion::UF:
+					ServerToClient50SayLink(cv_messages[static_cast<uint32>(ChannelClient->GetClientVersion())], Message);
+					break;
+				case EQEmu::versions::ClientVersion::RoF:
+					ServerToClient55SayLink(cv_messages[static_cast<uint32>(ChannelClient->GetClientVersion())], Message);
+					break;
+				case EQEmu::versions::ClientVersion::RoF2:
+				default:
+					cv_messages[static_cast<uint32>(ChannelClient->GetClientVersion())] = Message;
+					break;
+				}
+			}
+
+			ChannelClient->SendChannelMessage(Name, cv_messages[static_cast<uint32>(ChannelClient->GetClientVersion())], Sender);
 		}
 
 		iterator.Advance();
@@ -478,7 +505,7 @@ ChatChannel *ChatChannelList::AddClientToChannel(std::string ChannelName, Client
 		return nullptr;
 	}
 
-	Log.Out(Logs::Detail, Logs::UCS_Server, "AddClient to channel [%s] with password [%s]", NormalisedName.c_str(), Password.c_str());
+	Log(Logs::Detail, Logs::UCS_Server, "AddClient to channel [%s] with password [%s]", NormalisedName.c_str(), Password.c_str());
 
 	ChatChannel *RequiredChannel = FindChannel(NormalisedName);
 
@@ -554,7 +581,7 @@ void ChatChannelList::Process() {
 
 		if(CurrentChannel && CurrentChannel->ReadyToDelete()) {
 
-			Log.Out(Logs::Detail, Logs::UCS_Server, "Empty temporary password protected channel %s being destroyed.",
+			Log(Logs::Detail, Logs::UCS_Server, "Empty temporary password protected channel %s being destroyed.",
 				CurrentChannel->GetName().c_str());
 
 			RemoveChannel(CurrentChannel);
@@ -570,7 +597,7 @@ void ChatChannel::AddInvitee(const std::string &Invitee)
 	if (!IsInvitee(Invitee)) {
 		Invitees.push_back(Invitee);
 
-		Log.Out(Logs::Detail, Logs::UCS_Server, "Added %s as invitee to channel %s", Invitee.c_str(), Name.c_str());
+		Log(Logs::Detail, Logs::UCS_Server, "Added %s as invitee to channel %s", Invitee.c_str(), Name.c_str());
 	}
 
 }
@@ -581,7 +608,7 @@ void ChatChannel::RemoveInvitee(std::string Invitee)
 
 	if(it != std::end(Invitees)) {
 		Invitees.erase(it);
-		Log.Out(Logs::Detail, Logs::UCS_Server, "Removed %s as invitee to channel %s", Invitee.c_str(), Name.c_str());
+		Log(Logs::Detail, Logs::UCS_Server, "Removed %s as invitee to channel %s", Invitee.c_str(), Name.c_str());
 	}
 }
 
@@ -595,7 +622,7 @@ void ChatChannel::AddModerator(const std::string &Moderator)
 	if (!IsModerator(Moderator)) {
 		Moderators.push_back(Moderator);
 
-		Log.Out(Logs::Detail, Logs::UCS_Server, "Added %s as moderator to channel %s", Moderator.c_str(), Name.c_str());
+		Log(Logs::Detail, Logs::UCS_Server, "Added %s as moderator to channel %s", Moderator.c_str(), Name.c_str());
 	}
 
 }
@@ -606,7 +633,7 @@ void ChatChannel::RemoveModerator(const std::string &Moderator)
 
 	if (it != std::end(Moderators)) {
 		Moderators.erase(it);
-		Log.Out(Logs::Detail, Logs::UCS_Server, "Removed %s as moderator to channel %s", Moderator.c_str(), Name.c_str());
+		Log(Logs::Detail, Logs::UCS_Server, "Removed %s as moderator to channel %s", Moderator.c_str(), Name.c_str());
 	}
 }
 
@@ -620,7 +647,7 @@ void ChatChannel::AddVoice(const std::string &inVoiced)
 	if (!HasVoice(inVoiced)) {
 		Voiced.push_back(inVoiced);
 
-		Log.Out(Logs::Detail, Logs::UCS_Server, "Added %s as voiced to channel %s", inVoiced.c_str(), Name.c_str());
+		Log(Logs::Detail, Logs::UCS_Server, "Added %s as voiced to channel %s", inVoiced.c_str(), Name.c_str());
 	}
 }
 
@@ -631,7 +658,7 @@ void ChatChannel::RemoveVoice(const std::string &inVoiced)
 	if (it != std::end(Voiced)) {
 		Voiced.erase(it);
 
-		Log.Out(Logs::Detail, Logs::UCS_Server, "Removed %s as voiced to channel %s", inVoiced.c_str(), Name.c_str());
+		Log(Logs::Detail, Logs::UCS_Server, "Removed %s as voiced to channel %s", inVoiced.c_str(), Name.c_str());
 	}
 }
 
@@ -655,3 +682,118 @@ std::string CapitaliseName(std::string inString) {
 	return NormalisedName;
 }
 
+void ServerToClient45SayLink(std::string& clientSayLink, const std::string& serverSayLink) {
+	if (serverSayLink.find('\x12') == std::string::npos) {
+		clientSayLink = serverSayLink;
+		return;
+	}
+
+	auto segments = SplitString(serverSayLink, '\x12');
+
+	for (size_t segment_iter = 0; segment_iter < segments.size(); ++segment_iter) {
+		if (segment_iter & 1) {
+			if (segments[segment_iter].length() <= 56) {
+				clientSayLink.append(segments[segment_iter]);
+				// TODO: log size mismatch error
+				continue;
+			}
+
+			// Idx:  0 1     6     11    16    21    26    31    36 37   41 43    48       (Source)
+			// RoF2: X XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX X  XXXX XX XXXXX XXXXXXXX (56)
+			// 6.2:  X XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX       X  XXXX  X       XXXXXXXX (45)
+			// Diff:                                       ^^^^^         ^  ^^^^^
+
+			clientSayLink.push_back('\x12');
+			clientSayLink.append(segments[segment_iter].substr(0, 31));
+			clientSayLink.append(segments[segment_iter].substr(36, 5));
+
+			if (segments[segment_iter][41] == '0')
+				clientSayLink.push_back(segments[segment_iter][42]);
+			else
+				clientSayLink.push_back('F');
+
+			clientSayLink.append(segments[segment_iter].substr(48));
+			clientSayLink.push_back('\x12');
+		}
+		else {
+			clientSayLink.append(segments[segment_iter]);
+		}
+	}
+}
+
+void ServerToClient50SayLink(std::string& clientSayLink, const std::string& serverSayLink) {
+	if (serverSayLink.find('\x12') == std::string::npos) {
+		clientSayLink = serverSayLink;
+		return;
+	}
+
+	auto segments = SplitString(serverSayLink, '\x12');
+
+	for (size_t segment_iter = 0; segment_iter < segments.size(); ++segment_iter) {
+		if (segment_iter & 1) {
+			if (segments[segment_iter].length() <= 56) {
+				clientSayLink.append(segments[segment_iter]);
+				// TODO: log size mismatch error
+				continue;
+			}
+
+			// Idx:  0 1     6     11    16    21    26    31    36 37   41 43    48       (Source)
+			// RoF2: X XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX X  XXXX XX XXXXX XXXXXXXX (56)
+			// SoF:  X XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX       X  XXXX  X XXXXX XXXXXXXX (50)
+			// Diff:                                       ^^^^^         ^
+
+			clientSayLink.push_back('\x12');
+			clientSayLink.append(segments[segment_iter].substr(0, 31));
+			clientSayLink.append(segments[segment_iter].substr(36, 5));
+
+			if (segments[segment_iter][41] == '0')
+				clientSayLink.push_back(segments[segment_iter][42]);
+			else
+				clientSayLink.push_back('F');
+
+			clientSayLink.append(segments[segment_iter].substr(43));
+			clientSayLink.push_back('\x12');
+		}
+		else {
+			clientSayLink.append(segments[segment_iter]);
+		}
+	}
+}
+
+void ServerToClient55SayLink(std::string& clientSayLink, const std::string& serverSayLink) {
+	if (serverSayLink.find('\x12') == std::string::npos) {
+		clientSayLink = serverSayLink;
+		return;
+	}
+
+	auto segments = SplitString(serverSayLink, '\x12');
+
+	for (size_t segment_iter = 0; segment_iter < segments.size(); ++segment_iter) {
+		if (segment_iter & 1) {
+			if (segments[segment_iter].length() <= 56) {
+				clientSayLink.append(segments[segment_iter]);
+				// TODO: log size mismatch error
+				continue;
+			}
+
+			// Idx:  0 1     6     11    16    21    26    31    36 37   41 43    48       (Source)
+			// RoF2: X XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX X  XXXX XX XXXXX XXXXXXXX (56)
+			// RoF:  X XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX XXXXX X  XXXX  X XXXXX XXXXXXXX (55)
+			// Diff:                                                     ^
+
+			clientSayLink.push_back('\x12');
+			clientSayLink.append(segments[segment_iter].substr(0, 41));
+
+			if (segments[segment_iter][41] == '0')
+				clientSayLink.push_back(segments[segment_iter][42]);
+			else
+				clientSayLink.push_back('F');
+
+			clientSayLink.append(segments[segment_iter].substr(43));
+			clientSayLink.push_back('\x12');
+		}
+		else {
+			clientSayLink.append(segments[segment_iter]);
+		}
+	}
+}

@@ -21,8 +21,7 @@
 #define CHATSERVER_CLIENTLIST_H
 
 #include "../common/opcodemgr.h"
-#include "../common/eq_stream_type.h"
-#include "../common/eq_stream_factory.h"
+#include "../common/net/eqstream.h"
 #include "../common/rulesys.h"
 #include "chatchannel.h"
 #include <list>
@@ -84,10 +83,10 @@ struct CharacterEntry {
 class Client {
 
 public:
-	Client(std::shared_ptr<EQStream> eqs);
+	Client(std::shared_ptr<EQStreamInterface> eqs);
 	~Client();
 
-	std::shared_ptr<EQStream> ClientStream;
+	std::shared_ptr<EQStreamInterface> ClientStream;
 	void AddCharacter(int CharID, const char *CharacterName, int Level);
 	void ClearCharacters() { Characters.clear(); }
 	void SendMailBoxes();
@@ -140,8 +139,11 @@ public:
 	std::string MailBoxName();
 	int GetMailBoxNumber() { return CurrentMailBox; }
 	int GetMailBoxNumber(std::string CharacterName);
+
 	void SetConnectionType(char c);
 	ConnectionType GetConnectionType() { return TypeOfConnection; }
+	EQEmu::versions::ClientVersion GetClientVersion() { return ClientVersion_; }
+	
 	inline bool IsMailConnection() { return (TypeOfConnection == ConnectionTypeMail) || (TypeOfConnection == ConnectionTypeCombined); }
 	void SendNotification(int MailBoxNumber, std::string From, std::string Subject, int MessageID);
 	void ChangeMailBox(int NewMailBox);
@@ -168,7 +170,9 @@ private:
 	Timer *GlobalChatLimiterTimer; //60 seconds
 	int AttemptedMessages;
 	bool ForceDisconnect;
+
 	ConnectionType TypeOfConnection;
+	EQEmu::versions::ClientVersion ClientVersion_;
 	bool UnderfootOrLater;
 };
 
@@ -184,8 +188,7 @@ public:
 	void ProcessOPMailCommand(Client *c, std::string CommandString);
 
 private:
-
-	EQStreamFactory *chatsf;
+	EQ::Net::EQStreamManager *chatsf;
 
 	std::list<Client*> ClientChatConnections;
 

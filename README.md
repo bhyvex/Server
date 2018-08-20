@@ -1,32 +1,29 @@
 # EQEmulator Core Server
-|Travis CI (Linux)|Appveyor (Windows)   |
-|:---:|:---:|
-|[![Linux CI](https://travis-ci.org/EQEmu/Server.svg?branch=master)](https://travis-ci.org/EQEmu/Server)   |[![Windows CI](https://ci.appveyor.com/api/projects/status/d0cvokm7u732v8vl/branch/master?svg=true)](https://ci.appveyor.com/project/KimLS/server/branch/master)   |
+|Travis CI (Linux)|Appveyor w/ Bots (Windows)   |Appveyor w/o Bots (Windows)   |
+|:---:|:---:|:---:| 
+|[![Linux CI](https://travis-ci.org/EQEmu/Server.svg?branch=master)](https://travis-ci.org/EQEmu/Server)   |[![Build status](https://ci.appveyor.com/api/projects/status/scr25kmntx36c1ub/branch/master?svg=true)](https://ci.appveyor.com/project/KimLS/server-87crp/branch/master)   |[![Build status](https://ci.appveyor.com/api/projects/status/mdwbr4o9l6mxqofj/branch/master?svg=true)](https://ci.appveyor.com/project/KimLS/server-w0pq2/branch/master)   |
 
 ***
 
 **EQEmulator is a custom completely from-scratch open source server implementation for EverQuest built mostly on C++**
  * MySQL/MariaDB is used as the database engine (over 200+ tables)
  * Perl and LUA are both supported scripting languages for NPC/Player/Quest oriented events
- * Open source database (Project EQ) has content up to expansion GoD (included in server installs)
+ * Open source database (Project EQ) has content up to expansion OoW (included in server installs)
   * Game server environments and databases can be heavily customized to create all new experiences
  * Hundreds of Quests/events created and maintained by Project EQ
 
 ## Server Installs
-||Windows|Linux|
+| |Windows|Linux|
 |:---:|:---:|:---:|
 |**Install Count**|![Windows Install Count](http://analytics.akkadius.com/?install_count&windows_count)|![Linux Install Count](http://analytics.akkadius.com/?install_count&linux_count)| 
 ### > Windows 
-* [Easy Install](http://wiki.eqemulator.org/p?Akkas_PEQ_Server_Installer&frm=Main#from-scratch-installation-instructions-windows)
-* [Advanced Setup](http://wiki.eqemulator.org/p?Complete_Windows-based_Server_Setup_Guide)
+* [Install](https://github.com/EQEmu/Server/wiki/Windows-Server)
 
-### > Debian/Ubuntu
+### > Debian/Ubuntu/CentOS/Fedora
+* You can use curl or wget to kick off the installer (whichever your OS has)
+> curl -O https://raw.githubusercontent.com/EQEmu/Server/master/utils/scripts/linux_installer/install.sh install.sh && chmod 755 install.sh && ./install.sh
 
 > wget --no-check-certificate https://raw.githubusercontent.com/EQEmu/Server/master/utils/scripts/linux_installer/install.sh -O install.sh && chmod 755 install.sh && ./install.sh
-
-### > CentOS/Fedora
-
-> curl -O https://raw.githubusercontent.com/EQEmu/Server/master/utils/scripts/linux_installer/install.sh install.sh && chmod 755 install.sh && ./install.sh
 
 ## Supported Clients
 
@@ -53,7 +50,23 @@ forum, although pull requests will be much quicker and easier on all parties.
  - **User Discord Channel**: `#general`
  - **Developer Discord Channel**: `#eqemucoders`
 
-Resources
----
+## Resources
 - [EQEmulator Forums](http://www.eqemulator.org/forums)
-- [EQEmulator Wiki](http://wiki.eqemulator.org/i?M=Wiki)
+- [EQEmulator Wiki](https://github.com/EQEmu/Server/wiki)
+
+## Related Repositories
+* [ProjectEQ Quests](https://github.com/ProjectEQ/projecteqquests)
+* [Maps](https://github.com/Akkadius/EQEmuMaps)
+* [Installer Resources](https://github.com/Akkadius/EQEmuInstall)
+* [Zone Utilities](https://github.com/EQEmu/zone-utilities) - Various utilities and libraries for parsing, rendering and manipulating EQ Zone files.
+
+## Other License Info
+
+* The server code and utilities are released under **GPLv3**
+* We also include some small libraries for convienence that may be under different licensing
+  * SocketLib - GPL LibXML
+  * zlib - zlib license
+  * MariaDB/MySQL - GPL
+  * GPL Perl - GPL / ActiveState (under the assumption that this is a free project)
+  * CPPUnit - GLP StringUtilities - Apache
+  * LUA - MIT

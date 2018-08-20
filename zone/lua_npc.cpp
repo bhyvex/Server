@@ -27,6 +27,36 @@ void Lua_NPC::AddItem(int item_id, int charges, bool equip) {
 	self->AddItem(item_id, charges, equip);
 }
 
+void Lua_NPC::AddItem(int item_id, int charges, bool equip, int aug1) {
+	Lua_Safe_Call_Void();
+	self->AddItem(item_id, charges, equip, aug1);
+}
+
+void Lua_NPC::AddItem(int item_id, int charges, bool equip, int aug1, int aug2) {
+	Lua_Safe_Call_Void();
+	self->AddItem(item_id, charges, equip, aug1, aug2);
+}
+
+void Lua_NPC::AddItem(int item_id, int charges, bool equip, int aug1, int aug2, int aug3) {
+	Lua_Safe_Call_Void();
+	self->AddItem(item_id, charges, equip, aug1, aug2, aug3);
+}
+
+void Lua_NPC::AddItem(int item_id, int charges, bool equip, int aug1, int aug2, int aug3, int aug4) {
+	Lua_Safe_Call_Void();
+	self->AddItem(item_id, charges, equip, aug1, aug2, aug3, aug4);
+}
+
+void Lua_NPC::AddItem(int item_id, int charges, bool equip, int aug1, int aug2, int aug3, int aug4, int aug5) {
+	Lua_Safe_Call_Void();
+	self->AddItem(item_id, charges, equip, aug1, aug2, aug3, aug4, aug5);
+}
+
+void Lua_NPC::AddItem(int item_id, int charges, bool equip, int aug1, int aug2, int aug3, int aug4, int aug5, int aug6) {
+	Lua_Safe_Call_Void();
+	self->AddItem(item_id, charges, equip, aug1, aug2, aug3, aug4, aug5, aug6);
+}
+
 void Lua_NPC::AddLootTable() {
 	Lua_Safe_Call_Void();
 	self->AddLootTable();
@@ -390,7 +420,12 @@ void Lua_NPC::ModifyNPCStat(const char *stat, const char *value) {
 
 void Lua_NPC::AddAISpell(int priority, int spell_id, int type, int mana_cost, int recast_delay, int resist_adjust) {
 	Lua_Safe_Call_Void();
-	self->AddSpellToNPCList(priority, spell_id, type, mana_cost, recast_delay, resist_adjust);
+	self->AddSpellToNPCList(priority, spell_id, type, mana_cost, recast_delay, resist_adjust, 0, 0);
+}
+
+void Lua_NPC::AddAISpell(int priority, int spell_id, int type, int mana_cost, int recast_delay, int resist_adjust, int min_hp, int max_hp) {
+	Lua_Safe_Call_Void();
+	self->AddSpellToNPCList(priority, spell_id, type, mana_cost, recast_delay, resist_adjust, min_hp, max_hp);
 }
 
 void Lua_NPC::RemoveAISpell(int spell_id) {
@@ -458,14 +493,15 @@ void Lua_NPC::MerchantCloseShop() {
 	self->MerchantCloseShop();
 }
 
-void Lua_NPC::SetMerchantProbability(uint8 amt) {
-	Lua_Safe_Call_Void();
-	self->SetMerchantProbability(amt);
+int Lua_NPC::GetRawAC() {
+	Lua_Safe_Call_Int();
+	return self->GetRawAC();
 }
 
-uint8 Lua_NPC::GetMerchantProbability() {
+int Lua_NPC::GetAvoidanceRating()
+{
 	Lua_Safe_Call_Int();
-	return self->GetMerchantProbability();
+	return self->GetAvoidanceRating();
 }
 
 luabind::scope lua_register_npc() {
@@ -475,6 +511,12 @@ luabind::scope lua_register_npc() {
 		.def("CheckNPCFactionAlly", (int(Lua_NPC::*)(int))&Lua_NPC::CheckNPCFactionAlly)
 		.def("AddItem", (void(Lua_NPC::*)(int,int))&Lua_NPC::AddItem)
 		.def("AddItem", (void(Lua_NPC::*)(int,int,bool))&Lua_NPC::AddItem)
+		.def("AddItem", (void(Lua_NPC::*)(int,int,bool,int))&Lua_NPC::AddItem)
+		.def("AddItem", (void(Lua_NPC::*)(int,int,bool,int,int))&Lua_NPC::AddItem)
+		.def("AddItem", (void(Lua_NPC::*)(int,int,bool,int,int,int))&Lua_NPC::AddItem)
+		.def("AddItem", (void(Lua_NPC::*)(int,int,bool,int,int,int,int))&Lua_NPC::AddItem)
+		.def("AddItem", (void(Lua_NPC::*)(int,int,bool,int,int,int,int,int))&Lua_NPC::AddItem)
+		.def("AddItem", (void(Lua_NPC::*)(int,int,bool,int,int,int,int,int,int))&Lua_NPC::AddItem)
 		.def("AddLootTable", (void(Lua_NPC::*)(void))&Lua_NPC::AddLootTable)
 		.def("AddLootTable", (void(Lua_NPC::*)(int))&Lua_NPC::AddLootTable)
 		.def("RemoveItem", (void(Lua_NPC::*)(int))&Lua_NPC::RemoveItem)
@@ -548,6 +590,7 @@ luabind::scope lua_register_npc() {
 		.def("SetSwarmTarget", (void(Lua_NPC::*)(int))&Lua_NPC::SetSwarmTarget)
 		.def("ModifyNPCStat", (void(Lua_NPC::*)(const char*,const char*))&Lua_NPC::ModifyNPCStat)
 		.def("AddAISpell", (void(Lua_NPC::*)(int,int,int,int,int,int))&Lua_NPC::AddAISpell)
+		.def("AddAISpell", (void(Lua_NPC::*)(int,int,int,int,int,int,int,int))&Lua_NPC::AddAISpell)
 		.def("RemoveAISpell", (void(Lua_NPC::*)(int))&Lua_NPC::RemoveAISpell)
 		.def("SetSpellFocusDMG", (void(Lua_NPC::*)(int))&Lua_NPC::SetSpellFocusDMG)
 		.def("SetSpellFocusHeal", (void(Lua_NPC::*)(int))&Lua_NPC::SetSpellFocusHeal)
@@ -561,8 +604,8 @@ luabind::scope lua_register_npc() {
 		.def("GetScore", (int(Lua_NPC::*)(void))&Lua_NPC::GetScore)
 		.def("MerchantOpenShop", (void(Lua_NPC::*)(void))&Lua_NPC::MerchantOpenShop)
 		.def("MerchantCloseShop", (void(Lua_NPC::*)(void))&Lua_NPC::MerchantCloseShop)
-		.def("SetMerchantProbability", (void(Lua_NPC::*)(void))&Lua_NPC::SetMerchantProbability)
-		.def("GetMerchantProbability", (uint8(Lua_NPC::*)(void))&Lua_NPC::GetMerchantProbability);
+		.def("GetRawAC", (int(Lua_NPC::*)(void))&Lua_NPC::GetRawAC)
+		.def("GetAvoidanceRating", &Lua_NPC::GetAvoidanceRating);
 }
 
 #endif

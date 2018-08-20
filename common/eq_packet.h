@@ -51,6 +51,7 @@ protected:
 	EmuOpcode emu_opcode;
 
 	EQPacket(EmuOpcode opcode, const unsigned char *buf, const uint32 len);
+	EQPacket(EmuOpcode opcode, SerializeBuffer &buf) : BasePacket(buf), emu_opcode(opcode) { };
 //	EQPacket(const EQPacket &p) { }
 	EQPacket() { emu_opcode=OP_Unknown; pBuffer=nullptr; size=0; }
 
@@ -104,6 +105,8 @@ public:
 		{ app_opcode_size = GetExecutablePlatform() == ExePlatformUCS ? 1 : 2; }
 	EQApplicationPacket(const EmuOpcode op, const unsigned char *buf, const uint32 len) : EQPacket(op, buf, len), opcode_bypass(0)
 		{ app_opcode_size = GetExecutablePlatform() == ExePlatformUCS ? 1 : 2; }
+	EQApplicationPacket(const EmuOpcode op, SerializeBuffer &buf) : EQPacket(op, buf), opcode_bypass(0)
+		{ app_opcode_size = GetExecutablePlatform() == ExePlatformUCS ? 1 : 2; }
 	bool combine(const EQApplicationPacket *rhs);
 	uint32 serialize (uint16 opcode, unsigned char *dest) const;
 	uint32 Size() const { return size+app_opcode_size; }
@@ -115,11 +118,14 @@ public:
 	virtual void DumpRawHeader(uint16 seq=0xffff, FILE *to = stdout) const;
 	virtual void DumpRawHeaderNoTime(uint16 seq=0xffff, FILE *to = stdout) const;
 
-	uint16 GetOpcodeBypass() { return opcode_bypass; }
+	uint16 GetOpcodeBypass() const { return opcode_bypass; }
 	void SetOpcodeBypass(uint16 v) { opcode_bypass = v; }
 
+	uint16 GetProtocolOpcode() const { return protocol_opcode; }
+	void SetProtocolOpcode(uint16 v) { protocol_opcode = v; }
 protected:
 
+	uint16 protocol_opcode;
 	uint8 app_opcode_size;
 	uint16 opcode_bypass;
 private:
