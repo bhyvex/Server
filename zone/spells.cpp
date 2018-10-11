@@ -281,7 +281,7 @@ bool Mob::CastSpell(uint16 spell_id, uint16 target_id, CastingSlot slot,
 				return(false);
 			}
 		}
-		if (itm && (itm->GetItem()->Click.Type == EQEmu::item::ItemEffectEquipClick) && !(item_slot <= EQEmu::invslot::slotAmmo || item_slot == EQEmu::invslot::SLOT_POWER_SOURCE)){
+		if (itm && (itm->GetItem()->Click.Type == EQEmu::item::ItemEffectEquipClick) && item_slot > EQEmu::invslot::EQUIPMENT_END){
 			if (CastToClient()->ClientVersion() < EQEmu::versions::ClientVersion::SoF) {
 				// They are attempting to cast a must equip clicky without having it equipped
 				Log(Logs::General, Logs::Error, "HACKER: %s (account: %s) attempted to click an equip-only effect on item %s (id: %d) without equiping it!", CastToClient()->GetCleanName(), CastToClient()->AccountName(), itm->GetItem()->Name, itm->GetItem()->ID);
@@ -4247,6 +4247,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 		{
 			Log(Logs::Detail, Logs::Spells, "Our level (%d) is higher than the limit of this Mez spell (%d)", GetLevel(), spells[spell_id].max[effect_index]);
 			caster->Message_StringID(MT_Shout, CANNOT_MEZ_WITH_SPELL);
+			AddToHateList(caster, 1,0,true,false,false,spell_id);
 			return true;
 		}
 	}
@@ -4338,6 +4339,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 			{
 				Log(Logs::Detail, Logs::Spells, "Our level (%d) is higher than the limit of this Charm spell (%d)", GetLevel(), spells[spell_id].max[effect_index]);
 				caster->Message_StringID(MT_Shout, CANNOT_CHARM_YET);
+                AddToHateList(caster, 1,0,true,false,false,spell_id);
 				return true;
 			}
 		}
